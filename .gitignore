@@ -1,0 +1,11 @@
+.env
+.venv/
+.test-deps/
+.test-wheels/
+rag_data/chroma/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+*.log
