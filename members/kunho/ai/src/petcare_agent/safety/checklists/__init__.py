@@ -1,0 +1,2 @@
+"""Packaged checklist template data."""
+

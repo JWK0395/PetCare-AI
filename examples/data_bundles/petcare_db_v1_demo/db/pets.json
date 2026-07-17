@@ -1,0 +1,70 @@
+[
+  {
+    "id": 1,
+    "name": "Mochi",
+    "species": "cat",
+    "breed": "Domestic shorthair",
+    "birth_date": "2021-04-10",
+    "sex": "female",
+    "is_neutered": true,
+    "weight_kg": 4.2,
+    "size_class": "small",
+    "diseases_medications_allergies": [
+      {
+        "type": "disease",
+        "name": "mild seasonal allergy"
+      },
+      {
+        "type": "medication",
+        "name": "omega-3 supplement",
+        "details": "once daily"
+      }
+    ],
+    "created_at": "2026-07-01T09:00:00+09:00"
+  },
+  {
+    "id": 2,
+    "name": "Bori",
+    "species": "dog",
+    "breed": "Poodle mix",
+    "birth_date": "2019-11-22",
+    "sex": "male",
+    "is_neutered": true,
+    "weight_kg": 7.6,
+    "size_class": "small",
+    "diseases_medications_allergies": [
+      {
+        "type": "disease",
+        "name": "sensitive stomach"
+      },
+      {
+        "type": "allergy",
+        "name": "beef"
+      }
+    ],
+    "created_at": "2026-07-01T09:05:00+09:00"
+  },
+  {
+    "id": 3,
+    "name": "Leo",
+    "species": "cat",
+    "breed": "Russian blue",
+    "birth_date": "2020-02-18",
+    "sex": "male",
+    "is_neutered": true,
+    "weight_kg": 5.3,
+    "size_class": "small",
+    "diseases_medications_allergies": [
+      {
+        "type": "disease",
+        "name": "previous lower urinary tract inflammation"
+      },
+      {
+        "type": "medication",
+        "name": "urinary care diet",
+        "details": "daily"
+      }
+    ],
+    "created_at": "2026-07-01T09:10:00+09:00"
+  }
+]

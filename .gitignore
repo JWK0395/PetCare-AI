@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+pytest-cache-files-*/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# JavaScript and frontend
+node_modules/
+.next/
+coverage/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local audit artifacts
+tmp_pdf_*.json
+
+# RAG generated indexes
+rag_data/chroma/

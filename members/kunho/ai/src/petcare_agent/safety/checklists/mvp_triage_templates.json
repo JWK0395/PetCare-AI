@@ -1,0 +1,801 @@
+[
+  {
+    "checklist_id": "cat_cough_triage",
+    "species": "cat",
+    "chief_complaint": "cough",
+    "required_items": [
+      {
+        "item_id": "open_mouth_breathing",
+        "label": "Open mouth breathing",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "고양이가 지금 입을 벌리고 숨을 쉬고 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "respiratory_distress",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "labored_breathing",
+        "label": "Labored breathing",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "고양이가 숨쉬기 힘들어 보이나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "respiratory_distress",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "gum_color_abnormal",
+        "label": "Pale, blue, purple, or gray gums or tongue",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "잇몸이나 혀가 창백하거나 파랗거나 보라색 또는 회색으로 보이나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "oxygenation",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "collapse_or_fainting",
+        "label": "Collapse or fainting",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "고양이가 쓰러졌거나, 실신했거나, 서 있지 못한 적이 있나요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "collapse",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "lethargy",
+        "label": "Lethargy",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "고양이가 평소보다 유난히 힘이 없거나 반응이 많이 둔한가요?",
+        "priority": 3,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "general_condition",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "duration_hours",
+        "label": "Symptom duration in hours",
+        "type": "number",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "unit": "hours",
+        "question_text": "기침은 대략 몇 시간 전부터 시작됐나요?",
+        "priority": 5,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "duration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  },
+  {
+    "checklist_id": "dog_cough_triage",
+    "species": "dog",
+    "chief_complaint": "cough",
+    "required_items": [
+      {
+        "item_id": "labored_breathing",
+        "label": "Labored breathing",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "강아지가 숨쉬기 힘들어 보이나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "respiratory_distress",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "gum_color_abnormal",
+        "label": "Pale, blue, purple, or gray gums or tongue",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "잇몸이나 혀가 창백하거나 파랗거나 보라색 또는 회색으로 보이나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "oxygenation",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "collapse_or_fainting",
+        "label": "Collapse or fainting",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "강아지가 쓰러졌거나, 실신했거나, 서 있지 못한 적이 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "collapse",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "repeated_coughing",
+        "label": "Repeated coughing",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "기침이 반복되거나 발작처럼 자주 이어지나요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "symptom_severity",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "lethargy",
+        "label": "Lethargy",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "강아지가 평소보다 유난히 힘이 없거나 반응이 많이 둔한가요?",
+        "priority": 3,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "general_condition",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "duration_hours",
+        "label": "Symptom duration in hours",
+        "type": "number",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "unit": "hours",
+        "question_text": "기침은 대략 몇 시간 전부터 시작됐나요?",
+        "priority": 5,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "duration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  },
+  {
+    "checklist_id": "vomiting_triage",
+    "species": "cat/dog",
+    "chief_complaint": "vomiting",
+    "required_items": [
+      {
+        "item_id": "repeated_vomiting",
+        "label": "Repeated vomiting",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 반복해서 토하거나 음식이나 물을 먹어도 계속 토하나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "gi_severity",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "blood_in_vomit",
+        "label": "Blood in vomit",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "토사물에 피가 보이거나 커피 찌꺼기처럼 어두운 물질이 보였나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "bleeding",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "lethargy",
+        "label": "Lethargy",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 평소보다 유난히 힘이 없거나 반응이 많이 둔한가요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "general_condition",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "abdominal_pain",
+        "label": "Abdominal pain",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "배를 아파하거나, 등을 구부리거나, 몸이 긴장되어 있거나, 만지는 것을 싫어하나요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "pain",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "suspected_toxin",
+        "label": "Suspected toxin exposure",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "약, 화학물질, 독성이 있는 음식이나 식물, 또는 위험할 수 있는 물건을 먹었을 가능성이 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "toxicity",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "duration_hours",
+        "label": "Symptom duration in hours",
+        "type": "number",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "unit": "hours",
+        "question_text": "구토는 대략 몇 시간 전부터 시작됐나요?",
+        "priority": 5,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "duration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  },
+  {
+    "checklist_id": "diarrhea_triage",
+    "species": "cat/dog",
+    "chief_complaint": "diarrhea",
+    "required_items": [
+      {
+        "item_id": "bloody_diarrhea",
+        "label": "Bloody diarrhea",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "대변에 피가 보이거나 검은 타르 같은 변을 봤나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "bleeding",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "severe_lethargy",
+        "label": "Severe lethargy",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 매우 힘이 없거나, 깨우기 어렵거나, 평소처럼 행동하지 못하나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "general_condition",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "dehydration_signs",
+        "label": "Dehydration signs",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "잇몸이 매우 건조하거나 눈이 움푹 들어가 보이거나 심하게 힘이 없는 등 탈수 의심 신호가 있나요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "hydration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "repeated_diarrhea",
+        "label": "Repeated diarrhea",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "설사가 자주 반복되거나 조절하기 어려울 정도인가요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "gi_severity",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "young_or_small_pet",
+        "label": "Young or small pet",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 아주 어리거나, 체구가 매우 작거나, 건강 상태가 취약한 편인가요?",
+        "priority": 3,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "risk_factor",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "duration_hours",
+        "label": "Symptom duration in hours",
+        "type": "number",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "unit": "hours",
+        "question_text": "설사는 대략 몇 시간 전부터 시작됐나요?",
+        "priority": 5,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "duration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  },
+  {
+    "checklist_id": "breathing_triage",
+    "species": "cat/dog",
+    "chief_complaint": "breathing",
+    "required_items": [
+      {
+        "item_id": "open_mouth_breathing",
+        "label": "Open mouth breathing",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 지금 입을 벌리고 숨을 쉬고 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "respiratory_distress",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "labored_breathing",
+        "label": "Labored breathing",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 숨쉬기 힘들어 보이나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "respiratory_distress",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "gum_color_abnormal",
+        "label": "Pale, blue, purple, or gray gums or tongue",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "잇몸이나 혀가 창백하거나 파랗거나 보라색 또는 회색으로 보이나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "oxygenation",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "collapse_or_fainting",
+        "label": "Collapse or fainting",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 쓰러졌거나, 실신했거나, 서 있지 못한 적이 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "collapse",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "respiratory_rate",
+        "label": "Resting respiratory rate",
+        "type": "number",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "unit": "breaths_per_minute",
+        "question_text": "세어보셨다면, 쉬고 있을 때 1분에 호흡을 몇 번 하나요?",
+        "priority": 5,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "respiratory_measurement",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  },
+  {
+    "checklist_id": "seizure_triage",
+    "species": "cat/dog",
+    "chief_complaint": "seizure",
+    "required_items": [
+      {
+        "item_id": "active_seizure",
+        "label": "Active seizure",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 지금 경련을 하고 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "active_neurologic_event",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "seizure_over_5_min",
+        "label": "Seizure lasting over five minutes",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "경련이 5분 넘게 지속됐나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "event_duration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "repeated_seizures",
+        "label": "Repeated seizures",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "짧은 시간 안에 경련이 두 번 이상 있었나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "event_frequency",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "not_recovering",
+        "label": "Not recovering after seizure",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "경련 후에도 회복하지 못하거나 의식이 없거나 행동이 심하게 이상한가요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "recovery",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "duration_minutes",
+        "label": "Episode duration in minutes",
+        "type": "number",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "unit": "minutes",
+        "question_text": "그 증상은 대략 몇 분 동안 지속됐나요?",
+        "priority": 4,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "duration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  },
+  {
+    "checklist_id": "toxicity_triage",
+    "species": "cat/dog",
+    "chief_complaint": "toxicity",
+    "required_items": [
+      {
+        "item_id": "known_toxin_ingestion",
+        "label": "Known toxin ingestion",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 약, 화학물질, 독성이 있는 음식이나 식물, 또는 위험한 물건을 확실히 먹었나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "toxicity",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "unknown_substance_ingestion",
+        "label": "Unknown substance ingestion",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 정체를 알 수 없는 물질이나 물건을 먹었을 가능성이 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "toxicity",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "neurologic_signs",
+        "label": "Neurologic signs",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "떨림, 경련, 비틀거림, 심한 방향감각 상실 같은 신경 증상이 있나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "neurologic",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "vomiting_or_collapse",
+        "label": "Vomiting or collapse",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "노출 가능성 이후 구토하거나 쓰러지거나 서 있지 못하나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "systemic_signs",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "toxin_name",
+        "label": "Toxin or item name",
+        "type": "string",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 무엇을 먹었다고 생각하시나요?",
+        "priority": 3,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "toxicity_details",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  },
+  {
+    "checklist_id": "urinary_triage",
+    "species": "cat/dog",
+    "chief_complaint": "urinary",
+    "required_items": [
+      {
+        "item_id": "unable_to_urinate",
+        "label": "Unable to urinate",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "소변을 보려고 하지만 거의 나오지 않거나 전혀 나오지 않나요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "urinary_obstruction",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "painful_urination",
+        "label": "Painful urination",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "소변을 보려고 할 때 울거나, 힘을 주거나, 반복해서 자세를 잡거나, 아파 보이나요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "urinary_pain",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "repeated_straining",
+        "label": "Repeated straining",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "화장실을 반복해서 가거나 소변 자세를 계속 취하나요?",
+        "priority": 2,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "urinary_obstruction",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "blood_in_urine",
+        "label": "Blood in urine",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "소변에 피가 보이거나 붉은색 또는 갈색으로 보였나요?",
+        "priority": 3,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "bleeding",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      },
+      {
+        "item_id": "male_cat",
+        "label": "Male cat",
+        "type": "boolean",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "question_text": "반려동물이 수컷 고양이인가요?",
+        "priority": 1,
+        "metadata": {
+          "red_flag": true,
+          "question_group": "urinary_obstruction_risk",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ],
+    "optional_items": [
+      {
+        "item_id": "duration_hours",
+        "label": "Symptom duration in hours",
+        "type": "number",
+        "value": null,
+        "confidence": "unknown",
+        "source": "user_input",
+        "asked_count": 0,
+        "unit": "hours",
+        "question_text": "배뇨 문제는 대략 몇 시간 전부터 시작됐나요?",
+        "priority": 5,
+        "metadata": {
+          "red_flag": false,
+          "question_group": "duration",
+          "question_limit_contract": "max_2_total_safety_questions"
+        }
+      }
+    ]
+  }
+]

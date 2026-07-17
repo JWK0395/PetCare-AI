@@ -1,0 +1,403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petcare-ai.local/contracts/llm-structured-outputs.schema.json",
+  "title": "LLMStructuredOutputs",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/IntentClassificationOutput"
+    },
+    {
+      "$ref": "#/$defs/TurnUnderstandingOutput"
+    },
+    {
+      "$ref": "#/$defs/SocialChatOutput"
+    },
+    {
+      "$ref": "#/$defs/GeneralPetCareAnswerOutput"
+    },
+    {
+      "$ref": "#/$defs/StateExtractionOutput"
+    },
+    {
+      "$ref": "#/$defs/ChecklistExtractionOutput"
+    },
+    {
+      "$ref": "#/$defs/AnswerGuardReviewOutput"
+    },
+    {
+      "$ref": "#/$defs/HandoffSummaryOutput"
+    }
+  ],
+  "$defs": {
+    "Confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "Intent": {
+      "type": "string",
+      "enum": [
+        "social_chat",
+        "general_chat",
+        "symptom_check",
+        "followup",
+        "handoff_request",
+        "document_request",
+        "unknown"
+      ]
+    },
+    "Species": {
+      "type": "string",
+      "enum": [
+        "cat",
+        "dog",
+        "unknown"
+      ]
+    },
+    "CoursePattern": {
+      "type": "string",
+      "enum": [
+        "new",
+        "worsening",
+        "improving",
+        "persistent",
+        "recurrent",
+        "unknown"
+      ]
+    },
+    "CurrentStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symptoms",
+        "appetite",
+        "water",
+        "activity"
+      ],
+      "properties": {
+        "symptoms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "appetite": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "decreased",
+            "increased",
+            "unknown"
+          ],
+          "default": "unknown"
+        },
+        "water": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "decreased",
+            "increased",
+            "unknown"
+          ],
+          "default": "unknown"
+        },
+        "activity": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "decreased",
+            "increased",
+            "unknown"
+          ],
+          "default": "unknown"
+        }
+      }
+    },
+    "IntentClassificationOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "confidence",
+        "chief_complaint",
+        "requires_db_context",
+        "requires_safety_screening",
+        "red_flag_mentioned"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/Intent"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "chief_complaint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requires_db_context": {
+          "type": "boolean"
+        },
+        "requires_safety_screening": {
+          "type": "boolean"
+        },
+        "red_flag_mentioned": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "TurnUnderstandingOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "confidence",
+        "chief_complaint",
+        "requires_db_context",
+        "requires_safety_screening",
+        "red_flag_mentioned",
+        "state",
+        "social_chat"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/Intent"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "chief_complaint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requires_db_context": {
+          "type": "boolean"
+        },
+        "requires_safety_screening": {
+          "type": "boolean"
+        },
+        "red_flag_mentioned": {
+          "type": "boolean",
+          "default": false
+        },
+        "state": {
+          "$ref": "#/$defs/StateExtractionOutput"
+        },
+        "social_chat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SocialChatOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      }
+    },
+    "GeneralPetCareAnswerOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assistant_message"
+      ],
+      "properties": {
+        "assistant_message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "StateExtractionOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "species",
+        "symptoms",
+        "duration",
+        "course_pattern",
+        "current_status",
+        "negated_findings",
+        "uncertain_findings"
+      ],
+      "properties": {
+        "species": {
+          "$ref": "#/$defs/Species"
+        },
+        "symptoms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "duration": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "course_pattern": {
+          "$ref": "#/$defs/CoursePattern",
+          "default": "unknown"
+        },
+        "current_status": {
+          "$ref": "#/$defs/CurrentStatus"
+        },
+        "negated_findings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "uncertain_findings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "ChecklistItemUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "value",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": [
+            "boolean",
+            "number",
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ChecklistExtractionOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checklist_id",
+        "updates"
+      ],
+      "properties": {
+        "checklist_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "updates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChecklistItemUpdate"
+          },
+          "default": []
+        }
+      }
+    },
+    "AnswerGuardReviewOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "unsafe_phrases",
+        "revised_answer"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "revised",
+            "blocked"
+          ]
+        },
+        "unsafe_phrases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "revised_answer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "HandoffSummaryOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "summary",
+        "email_draft"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "non_emergency",
+            "emergency",
+            "none"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "email_draft": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "SocialChatOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assistant_message"
+      ],
+      "properties": {
+        "assistant_message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

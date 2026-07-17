@@ -1,0 +1,135 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petcare-ai.local/contracts/triage-checklist.schema.json",
+  "title": "TriageChecklistTemplate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "checklist_id",
+    "species",
+    "chief_complaint",
+    "required_items"
+  ],
+  "properties": {
+    "checklist_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "species": {
+      "type": "string",
+      "enum": [
+        "cat",
+        "dog",
+        "cat/dog",
+        "unknown"
+      ]
+    },
+    "chief_complaint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "required_items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ChecklistItem"
+      }
+    },
+    "optional_items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ChecklistItem"
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "ChecklistItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "label",
+        "type",
+        "value",
+        "confidence",
+        "source",
+        "asked_count"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "value": {
+          "type": [
+            "boolean",
+            "number",
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "source": {
+          "type": "string",
+          "default": "user_input"
+        },
+        "asked_count": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "question_text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "priority": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 5,
+          "default": null
+        },
+        "metadata": {
+          "type": "object",
+          "default": {}
+        }
+      }
+    },
+    "Confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    }
+  }
+}

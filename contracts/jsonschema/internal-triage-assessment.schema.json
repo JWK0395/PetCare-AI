@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petcare-ai.local/contracts/jsonschema/internal-triage-assessment.schema.json",
+  "title": "PetCare Internal Triage Assessment",
+  "description": "Internal Safety Guard schema for risk routing. This payload is not part of the veterinarian-facing hospital handoff summary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "risk_level",
+    "red_flag_inputs",
+    "clinical_inputs",
+    "needs_followup",
+    "followup_questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["emergency", "urgent", "non_emergency", "unknown"]
+    },
+    "red_flag_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "open_mouth_breathing",
+        "labored_breathing",
+        "gum_color_abnormal",
+        "collapse_or_fainting",
+        "seizure",
+        "severe_bleeding",
+        "toxin_exposure_suspected"
+      ],
+      "properties": {
+        "open_mouth_breathing": {
+          "enum": [true, false, "unknown"]
+        },
+        "labored_breathing": {
+          "enum": [true, false, "unknown"]
+        },
+        "gum_color_abnormal": {
+          "enum": [true, false, "unknown"]
+        },
+        "collapse_or_fainting": {
+          "enum": [true, false, "unknown"]
+        },
+        "seizure": {
+          "enum": [true, false, "unknown"]
+        },
+        "severe_bleeding": {
+          "enum": [true, false, "unknown"]
+        },
+        "toxin_exposure_suspected": {
+          "enum": [true, false, "unknown"]
+        }
+      }
+    },
+    "clinical_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "onset_known",
+        "course_pattern",
+        "baseline_change_known",
+        "associated_symptom_count_known"
+      ],
+      "properties": {
+        "onset_known": {
+          "type": "boolean"
+        },
+        "course_pattern": {
+          "type": "string",
+          "enum": ["new", "worsening", "improving", "persistent", "recurrent", "unknown"]
+        },
+        "baseline_change_known": {
+          "type": "boolean"
+        },
+        "associated_symptom_count_known": {
+          "type": "boolean"
+        }
+      }
+    },
+    "needs_followup": {
+      "type": "boolean"
+    },
+    "followup_questions": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

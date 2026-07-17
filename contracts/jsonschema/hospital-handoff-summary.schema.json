@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petcare-ai.local/contracts/jsonschema/hospital-handoff-summary.schema.json",
+  "title": "PetCare Hospital Handoff Summary",
+  "description": "Veterinarian-facing hospital handoff summary. Risk routing fields are intentionally kept outside this payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "patient",
+    "visit_reason",
+    "clinical_course",
+    "baseline_comparison",
+    "triage_assessment",
+    "medical_background"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.1"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "patient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pet_id",
+        "name",
+        "species",
+        "breed",
+        "sex",
+        "neutered",
+        "age_years",
+        "age_display",
+        "weight_kg"
+      ],
+      "properties": {
+        "pet_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "species": {
+          "type": "string",
+          "enum": ["dog", "cat", "unknown"]
+        },
+        "breed": {
+          "type": ["string", "null"]
+        },
+        "sex": {
+          "type": "string",
+          "enum": ["male", "female", "unknown"]
+        },
+        "neutered": {
+          "type": ["boolean", "null"]
+        },
+        "age_years": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "age_display": {
+          "type": ["string", "null"]
+        },
+        "weight_kg": {
+          "type": ["number", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "visit_reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chief_complaints", "owner_summary", "requested_goal"],
+      "properties": {
+        "chief_complaints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "owner_summary": {
+          "type": "string"
+        },
+        "requested_goal": {
+          "type": "string",
+          "enum": ["situation_assessment", "hospital_visit", "vet_summary"]
+        }
+      }
+    },
+    "clinical_course": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "onset_text",
+        "onset_at",
+        "duration_text",
+        "course_pattern",
+        "timeline_summary"
+      ],
+      "properties": {
+        "onset_text": {
+          "type": ["string", "null"]
+        },
+        "onset_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "duration_text": {
+          "type": ["string", "null"]
+        },
+        "course_pattern": {
+          "type": "string",
+          "enum": ["new", "worsening", "improving", "persistent", "recurrent", "unknown"]
+        },
+        "timeline_summary": {
+          "type": "string"
+        }
+      }
+    },
+    "baseline_comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_days", "summary", "changes"],
+      "properties": {
+        "window_days": {
+          "type": "number",
+          "const": 3
+        },
+        "summary": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "label",
+              "current",
+              "baseline",
+              "change_summary",
+              "delta_value",
+              "delta_unit"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "appetite",
+                  "water",
+                  "activity",
+                  "weight",
+                  "stool",
+                  "vomiting",
+                  "urination",
+                  "other"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "current": {
+                "type": ["string", "null"]
+              },
+              "baseline": {
+                "type": ["string", "null"]
+              },
+              "change_summary": {
+                "type": "string",
+                "enum": ["normal", "decreased", "increased", "abnormal", "unknown"]
+              },
+              "delta_value": {
+                "type": ["number", "null"]
+              },
+              "delta_unit": {
+                "enum": ["percent", "kg", "count", "minutes", "text", null]
+              }
+            }
+          }
+        }
+      }
+    },
+    "triage_assessment": {
+      "type": "object",
+      "description": "Veterinarian-facing symptom and red-flag summary. Internal risk routing fields are not included here.",
+      "additionalProperties": false,
+      "required": ["associated_symptoms", "red_flags"],
+      "properties": {
+        "associated_symptoms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "label", "summary", "count", "last_observed_at"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "vomiting",
+                  "diarrhea",
+                  "lethargy",
+                  "coughing",
+                  "breathing_issue",
+                  "pain",
+                  "limping",
+                  "toxin_exposure",
+                  "other"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "count": {
+                "type": ["number", "null"],
+                "minimum": 0
+              },
+              "last_observed_at": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "red_flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "label", "summary"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "open_mouth_breathing",
+                  "labored_breathing",
+                  "gum_color_abnormal",
+                  "collapse_or_fainting",
+                  "seizure",
+                  "severe_bleeding",
+                  "toxin_exposure_suspected"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "medical_background": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conditions", "medications_or_supplements", "allergies"],
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "medications_or_supplements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allergies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

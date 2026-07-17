@@ -1,0 +1,12 @@
+{"case_id":"dog_chocolate","query":"강아지가 초콜릿을 먹었을 때 어떤 문제가 생길 수 있어?","species":"dog","expected_document_ids":["cornell_dog_chocolate_toxicity_what_should_i_do_if_my_dog_eats_chocolate"],"top_k":5}
+{"case_id":"dog_xylitol","query":"강아지가 자일리톨이 들어간 껌을 먹으면 위험한가?","species":"dog","expected_document_ids":["cornell_dog_xylitol_toxicities"],"top_k":5}
+{"case_id":"dog_heatstroke","query":"더운 날 강아지가 심하게 헐떡이고 쓰러지는 것은 열사병 증상일까?","species":"dog","expected_document_ids":["cornell_dog_heatstroke_medical_emergency"],"top_k":5}
+{"case_id":"dog_seizure","query":"강아지가 발작을 일으킬 때 보호자가 알아야 할 점은 무엇인가?","species":"dog","expected_document_ids":["cornell_dog_managing_seizures"],"top_k":5}
+{"case_id":"dog_vomiting","query":"강아지가 반복해서 구토하는 원인과 진료가 필요한 징후는 무엇인가?","species":"dog","expected_document_ids":["cornell_dog_vomiting"],"top_k":5}
+{"case_id":"dog_heartworm","query":"강아지 심장사상충은 어떻게 감염되고 예방하는가?","species":"dog","expected_document_ids":["cornell_dog_heartworm_disease"],"top_k":5}
+{"case_id":"cat_chronic_kidney","query":"고양이 만성 신장질환의 증상과 관리에 대해 알고 싶어","species":"cat","expected_document_ids":["cornell_cat_chronic_kidney_disease"],"top_k":5}
+{"case_id":"cat_hyperthyroidism","query":"나이 든 고양이가 많이 먹는데도 살이 빠지면 갑상선 문제일 수 있나?","species":"cat","expected_document_ids":["cornell_cat_hyperthyroidism_cats"],"top_k":5}
+{"case_id":"cat_diabetes","query":"고양이 당뇨병의 흔한 증상과 위험 요인은 무엇인가?","species":"cat","expected_document_ids":["cornell_cat_feline_diabetes"],"top_k":5}
+{"case_id":"cat_lower_urinary","query":"고양이가 화장실을 자주 가지만 소변을 잘 못 보면 어떤 요로 질환을 의심하나?","species":"cat","expected_document_ids":["cornell_cat_feline_lower_urinary_tract_disease"],"top_k":5}
+{"case_id":"cat_asthma","query":"고양이가 기침하고 숨쉬기 힘들어하면 천식일 수 있나?","species":"cat","expected_document_ids":["cornell_cat_feline_asthma_what_you_need_know","cornell_cat_feline_asthma_risky_business_many_cats"],"top_k":5}
+{"case_id":"cat_pancreatitis","query":"고양이 췌장염은 어떤 증상을 보이고 어떻게 진단하는가?","species":"cat","expected_document_ids":["cornell_cat_feline_pancreatitis","cornell_cat_pancreatitis"],"top_k":5}

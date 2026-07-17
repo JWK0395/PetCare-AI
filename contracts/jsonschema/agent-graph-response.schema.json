@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petcare-ai.local/contracts/agent-graph-response.schema.json",
+  "title": "AgentGraphResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "response_id",
+    "conversation_id",
+    "route",
+    "risk_level",
+    "assistant_message",
+    "needs_user_response",
+    "follow_up_question",
+    "handoff",
+    "emergency"
+  ],
+  "properties": {
+    "response_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "conversation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route": {
+      "$ref": "#/$defs/NodeRoute"
+    },
+    "risk_level": {
+      "$ref": "#/$defs/RiskLevel"
+    },
+    "assistant_message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "needs_user_response": {
+      "type": "boolean",
+      "default": false
+    },
+    "follow_up_question": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/FollowUpQuestion"
+        }
+      ]
+    },
+    "handoff": {
+      "$ref": "#/$defs/HandoffResponse"
+    },
+    "emergency": {
+      "$ref": "#/$defs/EmergencyResponse"
+    }
+  },
+  "$defs": {
+    "NodeRoute": {
+      "type": "string",
+      "enum": [
+        "intent_classifier",
+        "db_context_loader",
+        "baseline_builder",
+        "state_updater",
+        "change_detector",
+        "safety_guard",
+        "question_manager",
+        "emergency",
+        "chat",
+        "evidence_planner",
+        "rag",
+        "answer_composer",
+        "answer_guard",
+        "handoff",
+        "end"
+      ]
+    },
+    "RiskLevel": {
+      "type": "string",
+      "enum": [
+        "emergency",
+        "urgent",
+        "non_emergency",
+        "unknown"
+      ]
+    },
+    "FollowUpQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "question_id",
+        "text"
+      ],
+      "properties": {
+        "question_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "HandoffResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "summary",
+        "summary_json",
+        "email_draft"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "non_emergency",
+            "emergency",
+            "none"
+          ],
+          "default": "none"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary_json": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "email_draft": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "EmergencyResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "is_emergency",
+        "triggered_rules"
+      ],
+      "properties": {
+        "is_emergency": {
+          "type": "boolean",
+          "default": false
+        },
+        "triggered_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
+

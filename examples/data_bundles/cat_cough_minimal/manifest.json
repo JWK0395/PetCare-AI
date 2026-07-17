@@ -1,0 +1,5 @@
+{
+  "schema_version": "1.0",
+  "data_model": "petcare_db_v1",
+  "description": "Minimal local harness fixture for a cat cough scenario."
+}

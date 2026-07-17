@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "name": "Mochi",
+    "species": "cat",
+    "breed": "Domestic shorthair",
+    "birth_date": "2021-04-10",
+    "sex": "female",
+    "is_neutered": true,
+    "weight_kg": 4.2,
+    "size_class": "small",
+    "diseases_medications_allergies": [
+      {
+        "type": "disease",
+        "name": "mild seasonal allergy"
+      },
+      {
+        "type": "medication",
+        "name": "omega-3 supplement",
+        "details": "once daily"
+      }
+    ]
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1,
+    "pet_id": 1,
+    "date": "2026-06-20",
+    "hospital": "Happy Animal Hospital",
+    "diagnosis": "mild seasonal allergy",
+    "content": "Monitor sneezing and eye discharge. No regular medication required.",
+    "original_file_ref": "documents/diagnosis_001.pdf"
+  }
+]

@@ -1,0 +1,41 @@
+[
+  {
+    "id": 101,
+    "pet_id": 1,
+    "record_date": "2026-07-16",
+    "raw_text": "Mochi ate normally and played for a while. No vomiting.",
+    "food": "normal",
+    "water": "normal",
+    "activity": "normal",
+    "symptom": "none",
+    "stool": "normal",
+    "vomit": "none",
+    "notes": "Routine day."
+  },
+  {
+    "id": 100,
+    "pet_id": 1,
+    "record_date": "2026-07-15",
+    "raw_text": "No unusual symptoms. Appetite and activity were normal.",
+    "food": "normal",
+    "water": "normal",
+    "activity": "normal",
+    "symptom": "none",
+    "stool": "normal",
+    "vomit": "none",
+    "notes": "Routine day."
+  },
+  {
+    "id": 99,
+    "pet_id": 1,
+    "record_date": "2026-07-14",
+    "raw_text": "Normal appetite, water, stool, and activity.",
+    "food": "normal",
+    "water": "normal",
+    "activity": "normal",
+    "symptom": "none",
+    "stool": "normal",
+    "vomit": "none",
+    "notes": "Routine day."
+  }
+]

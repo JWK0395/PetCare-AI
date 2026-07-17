@@ -1,0 +1,47 @@
+[
+  {
+    "chunk_id": "cat_cough_001",
+    "source_id": "demo_cat_cough",
+    "title": "Cat coughing care guide",
+    "text": "Coughing in cats can have multiple causes. Open-mouth breathing, labored breathing, collapse, or abnormal gum color should be treated as warning signs.",
+    "score": 0.9,
+    "metadata": {
+      "provider": "fixture",
+      "species": "cat",
+      "topic": "cough",
+      "chief_complaint": "cough",
+      "canonical_url": "https://example.invalid/cat-cough",
+      "section_path": ["Demo", "Cat cough"]
+    }
+  },
+  {
+    "chunk_id": "dog_vomiting_001",
+    "source_id": "demo_dog_vomiting",
+    "title": "Dog vomiting care guide",
+    "text": "Repeated vomiting, blood in vomit, severe lethargy, abdominal pain, or suspected toxin exposure are reasons to seek prompt veterinary guidance.",
+    "score": 0.88,
+    "metadata": {
+      "provider": "fixture",
+      "species": "dog",
+      "topic": "vomiting",
+      "chief_complaint": "vomiting",
+      "canonical_url": "https://example.invalid/dog-vomiting",
+      "section_path": ["Demo", "Dog vomiting"]
+    }
+  },
+  {
+    "chunk_id": "cat_urinary_001",
+    "source_id": "demo_cat_urinary",
+    "title": "Cat urinary care guide",
+    "text": "A cat that cannot urinate or is repeatedly straining with little or no urine may need urgent veterinary attention, especially male cats.",
+    "score": 0.92,
+    "metadata": {
+      "provider": "fixture",
+      "species": "cat",
+      "topic": "urinary",
+      "chief_complaint": "urinary",
+      "canonical_url": "https://example.invalid/cat-urinary",
+      "section_path": ["Demo", "Cat urinary"]
+    }
+  }
+]

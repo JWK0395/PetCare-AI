@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "pet_id": 1,
+    "date": "2026-06-20",
+    "hospital": "Happy Animal Hospital",
+    "diagnosis": "mild seasonal allergy",
+    "content": "Monitor sneezing and eye discharge. No regular medication required.",
+    "original_file_ref": "documents/mochi_allergy_20260620.pdf"
+  },
+  {
+    "id": 2,
+    "pet_id": 2,
+    "date": "2026-05-05",
+    "hospital": "Green Vet Clinic",
+    "diagnosis": "sensitive stomach",
+    "content": "Avoid sudden food changes. Return if repeated vomiting, blood, severe lethargy, or abdominal pain occurs.",
+    "original_file_ref": "documents/bori_gi_20260505.pdf"
+  },
+  {
+    "id": 3,
+    "pet_id": 3,
+    "date": "2026-04-12",
+    "hospital": "City Cat Clinic",
+    "diagnosis": "lower urinary tract inflammation",
+    "content": "History of urinary discomfort. Monitor litter box frequency, urine amount, straining, crying, and blood in urine.",
+    "original_file_ref": "documents/leo_urinary_20260412.pdf"
+  }
+]

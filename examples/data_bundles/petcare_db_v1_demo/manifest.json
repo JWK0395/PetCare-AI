@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "data_model": "petcare_db_v1",
+  "description": "DB-style demo data for the local PetCare agent harness.",
+  "source_contracts": {
+    "db_schema": "docs/database-schema.md",
+    "api_shape": "docs/api-endpoints.md"
+  },
+  "pets": [
+    {
+      "pet_id": 1,
+      "name": "Mochi",
+      "scenario": "cat cough"
+    },
+    {
+      "pet_id": 2,
+      "name": "Bori",
+      "scenario": "dog vomiting"
+    },
+    {
+      "pet_id": 3,
+      "name": "Leo",
+      "scenario": "cat urinary concern"
+    }
+  ]
+}

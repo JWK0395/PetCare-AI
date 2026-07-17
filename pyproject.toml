@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "petcare-agent"
+version = "0.1.0"
+description = "PetCare-AI LangGraph agent runtime"
+requires-python = ">=3.11"
+dependencies = [
+  "langgraph>=1.0.0",
+  "langchain-core>=1.0.0",
+  "langchain-openai>=1.0.0",
+  "langsmith>=0.4.0",
+  "openai>=1.0.0",
+  "pydantic>=2.10.0",
+  "pydantic-settings>=2.7.0",
+  "pytest>=8.0.0",
+]
+
+[project.optional-dependencies]
+rag = [
+  "chromadb==1.5.9",
+  "tiktoken==0.13.0",
+]
+
+[project.scripts]
+petcare-agent-playground = "petcare_agent.harness.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["members/kunho/ai/src"]
+
+[tool.setuptools.package-data]
+petcare_agent = ["safety/checklists/*.json", "prompts/*.md"]
+
+[tool.pytest.ini_options]
+pythonpath = ["members/kunho/ai/src"]
+testpaths = ["members/kunho/ai/tests", "tests"]
+addopts = "-q -p no:cacheprovider"
+
+
+
+
+

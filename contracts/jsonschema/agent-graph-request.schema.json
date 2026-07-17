@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petcare-ai.local/contracts/agent-graph-request.schema.json",
+  "title": "AgentGraphRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "conversation_id",
+    "pet_id",
+    "user_input",
+    "locale",
+    "timezone",
+    "timestamp"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "conversation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pet_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "user_input": {
+      "type": "string",
+      "minLength": 1
+    },
+    "conversation_history": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ConversationMessage"
+      },
+      "default": []
+    },
+    "locale": {
+      "type": "string",
+      "default": "ko-KR"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "Asia/Seoul"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "user_location": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/UserLocation"
+        }
+      ],
+      "default": null
+    }
+  },
+  "$defs": {
+    "UserLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lat",
+        "lng",
+        "permission"
+      ],
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lng": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "granted",
+            "denied",
+            "prompt",
+            "unknown"
+          ],
+          "default": "unknown"
+        }
+      }
+    },
+    "ConversationMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "content"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "system"
+          ]
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

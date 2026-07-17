@@ -1,0 +1,17 @@
+[
+  {
+    "chunk_id": "cat_cough_001",
+    "source_id": "cornell_cat_cough_demo",
+    "title": "Cat coughing care guide",
+    "text": "Coughing in cats can have multiple causes. Breathing distress, open-mouth breathing, collapse, or abnormal gum color should be treated as urgent warning signs.",
+    "score": 0.9,
+    "metadata": {
+      "provider": "fixture",
+      "species": "cat",
+      "topic": "cough",
+      "chief_complaint": "cough",
+      "canonical_url": "https://example.invalid/cat-cough",
+      "section_path": ["Demo", "Cat cough"]
+    }
+  }
+]
