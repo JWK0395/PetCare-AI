@@ -7,6 +7,7 @@ from .config import settings
 from .database import Base, SessionLocal, engine
 from .routers import (
     auth,
+    diagnoses,
     pets,
     records,
 )
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(pets.router)
 app.include_router(records.router)
+app.include_router(diagnoses.router)
 
 
 @app.get("/health")
