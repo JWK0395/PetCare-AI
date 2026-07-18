@@ -8,6 +8,7 @@ from .database import Base, SessionLocal, engine
 from .routers import (
     auth,
     pets,
+    records,
 )
 from .services.seed import seed_if_empty
 
@@ -45,6 +46,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(pets.router)
+app.include_router(records.router)
 
 
 @app.get("/health")
