@@ -65,7 +65,6 @@ def get_llm_service() -> OpenAIService:
 def set_llm_service(
     service: OpenAIService | Any,
 ) -> None:
-    """테스트 또는 의존성 주입용 LLM 교체 함수."""
     global _llm_service
     _llm_service = service
 
@@ -151,6 +150,5 @@ def get_rag_provider() -> RAGProvider:
 def set_rag_provider(
     provider: RAGProvider,
 ) -> None:
-    """팀 RAG 또는 테스트용 Provider 교체 함수."""
     global _rag_provider
     _rag_provider = provider

@@ -108,7 +108,6 @@ RAW_EMERGENCY_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
-
 PAST_SEVERE_MARKERS = [
     r"아까(?:는)?",
     r"전에는",
@@ -207,8 +206,8 @@ NO_PATTERNS = [
 def raw_keyword_hits(text: str) -> set[str]:
     hits: set[str] = set()
 
-    # 서로 다른 후속 답변의 부정 표현이 섞이지 않도록
-    # 줄바꿈과 문장부호 기준으로 분리해 검사합니다.
+
+                               
     segments = [
         segment.strip()
         for segment in re.split(
@@ -252,7 +251,7 @@ def raw_keyword_hits(text: str) -> set[str]:
 def answer_polarity(answer: str) -> Literal["yes", "no", "unknown"]:
     normalized = answer.strip().lower()
 
-    # 부정을 먼저 검사해야 "그렇지는 않아"를 긍정으로 오해하지 않습니다.
+
     if any(re.search(pattern, normalized) for pattern in NO_PATTERNS):
         return "no"
 
@@ -289,7 +288,6 @@ def follow_up_emergency_codes(
     return codes
 
 
-
 URGENT_WORSENING_PATTERNS = [
     r"갑자기.{0,20}(?:더\s*)?안\s*좋",
     r"갑자기.{0,20}(?:나빠|악화)",
@@ -324,9 +322,9 @@ def detect_owner_urgent_worsening(
         [],
     )
 
-    # 첫 문장만으로 애매하게 응급 처리하지 않습니다.
-    # 한 번 이상 문진했는데도 갑작스러운 악화와 강한 우려가
-    # 함께 반복될 때 문진을 중단합니다.
+
+                                    
+
     if len(history) < 1:
         return False
 
@@ -383,7 +381,7 @@ def current_priority_emergency_codes(
         health_text
     )
 
-    # severe_deterioration은 실제 hard rule 문구가 있을 때만 인정합니다.
+
     if "severe_deterioration" not in raw_codes:
         structured_codes.discard(
             "severe_deterioration"
@@ -394,8 +392,8 @@ def current_priority_emergency_codes(
             "severe_deterioration"
         )
 
-    # 갑작스러운 악화 + 강한 우려 + 상태 확인 불가가
-    # 문진 이후에도 반복되면 질문을 더 하지 않습니다.
+
+                                 
     if detect_owner_urgent_worsening(state):
         raw_codes.add(
             "owner_urgent_worsening"

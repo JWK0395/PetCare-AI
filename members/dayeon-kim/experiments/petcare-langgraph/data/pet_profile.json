@@ -1,23 +1,29 @@
 {
-  "id": 103,
-  "name": "모카",
-  "species": "cat",
-  "breed": "러시안 블루",
-  "birth_date": null,
-  "sex": null,
-  "is_neutered": null,
-  "weight_kg": 3.9,
-  "size_class": null,
+  "id": 204,
+  "name": "보리",
+  "species": "dog",
+  "breed": "말티즈",
+  "birth_date": "2021-03-12",
+  "sex": "female",
+  "is_neutered": true,
+  "weight_kg": 4.2,
+  "size_class": "small",
   "diseases_medications_allergies": [
     {
       "type": "disease",
-      "name": "급성 식이성 장염"
+      "name": "외이염",
+      "details": "2026-06-18 진단"
     },
     {
       "type": "medication",
-      "name": "장 보호제",
-      "details": "3일분"
+      "name": "점이액",
+      "details": "오른쪽 귀에 1일 2회, 7일간 사용"
+    },
+    {
+      "type": "allergy",
+      "name": "닭고기 의심",
+      "details": "확진되지 않았으며 섭취 후 귀 가려움이 심해진 적이 있음"
     }
   ],
-  "created_at": "2026-07-16T17:01:03+09:00"
+  "created_at": "2026-07-19T10:00:00+09:00"
 }

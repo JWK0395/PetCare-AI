@@ -5,25 +5,39 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .local_data import DATA_DIR, load_local_context
-from .models import GraphStepResult, PetCareState
-from .runtime import resume_petcare, start_petcare
+from .local_data import (
+    DATA_DIR,
+    load_local_context,
+)
+from .models import (
+    GraphStepResult,
+    PetCareState,
+)
+from .runtime import (
+    resume_petcare,
+    start_petcare,
+)
 
 
 def append_transcript(
     path: Path,
     record: dict[str, Any],
 ) -> None:
-    with path.open("a", encoding="utf-8") as file:
+    with path.open(
+        "a",
+        encoding="utf-8",
+    ) as file:
         file.write(
-            json.dumps(record, ensure_ascii=False)
+            json.dumps(
+                record,
+                ensure_ascii=False,
+            )
             + "\n"
         )
 
 
 def print_step_metadata(
     step: GraphStepResult,
-    *,
     trace: list[str],
 ) -> None:
     state = step["state"]
@@ -31,24 +45,45 @@ def print_step_metadata(
     if step["status"] == "waiting_for_user":
         route = "question_manager"
         risk = "unknown"
-        needs_user_response = True
+        needs_response = True
     else:
         route = state.get("route")
         risk = state.get("route")
-        needs_user_response = False
-
-    triage_status = state.get(
-        "triage_status",
-        "idle",
-    )
+        needs_response = False
 
     print(
-        f"[route={route} "
-        f"risk={risk} "
-        f"triage={triage_status} "
-        f"needs_user_response={needs_user_response}]"
+        "[debug] "
+        f"route={route}, "
+        f"risk={risk}, "
+        f"triage={state.get('triage_status', 'idle')}, "
+        f"needs_user_response={needs_response}"
     )
-    print("[trace=" + " -> ".join(trace) + "]")
+    print(
+        "[trace] "
+        + " -> ".join(trace)
+    )
+
+
+def _state_preview(
+    state: PetCareState,
+) -> dict[str, Any]:
+    keys = [
+        "route",
+        "triage_status",
+        "post_triage_mode",
+        "conversation_history",
+        "question_strategy",
+        "follow_up_history",
+        "emergency_hits",
+        "recovery_hits",
+        "rag_done",
+        "errors",
+    ]
+
+    return {
+        key: state.get(key)
+        for key in keys
+    }
 
 
 def run_local_harness(
@@ -59,13 +94,11 @@ def run_local_harness(
     conversation_id = (
         f"local_{datetime.now():%Y%m%d_%H%M%S}"
     )
-
     transcript_dir = Path("tmp")
     transcript_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
-
     transcript_path = (
         transcript_dir
         / f"agent-harness_{conversation_id}.jsonl"
@@ -74,19 +107,36 @@ def run_local_harness(
     pending_interrupt = False
     accumulated_trace: list[str] = []
     last_state: PetCareState = {}
+    debug_enabled = False
 
-    print("Agent: petcare-assessment-graph")
-    print("Data source: backend-context-snapshot")
-    print(f"Pet id: {pet_id}")
-    print(f"Conversation id: {conversation_id}")
-    print(f"Transcript: {transcript_path}")
-    print("Type a message, or use /help for commands.")
+    pet_name = (
+        backend_context.get(
+            "pet",
+            {},
+        ).get("name")
+        or "미등록"
+    )
+
+    print("PetCare AI 상태 확인 에이전트")
+    print(
+        f"반려동물: {pet_name} "
+        f"(ID: {pet_id})"
+    )
+    print(
+        "메시지를 입력하세요. "
+        "명령어는 /help에서 확인할 수 있습니다."
+    )
 
     while True:
         try:
-            user_text = input("\nUser> ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\n종료합니다.")
+            user_text = input(
+                "\nUser> "
+            ).strip()
+        except (
+            KeyboardInterrupt,
+            EOFError,
+        ):
+            print("\n대화를 종료합니다.")
             break
 
         if not user_text:
@@ -100,15 +150,31 @@ def run_local_harness(
             "quit",
             "exit",
         }:
-            print("종료합니다.")
+            print("대화를 종료합니다.")
             break
 
         if command == "/help":
             print(
-                "/help: 도움말 | "
-                "/state: 현재 State | "
-                "/memory: 최근 대화 | "
-                "/quit: 종료"
+                "/help 도움말 | "
+                "/debug 디버그 표시 전환 | "
+                "/state 현재 상태 | "
+                "/memory 최근 대화 | "
+                "/reload JSON 다시 읽기 | "
+                "/quit 종료"
+            )
+            continue
+
+        if command == "/debug":
+            debug_enabled = (
+                not debug_enabled
+            )
+            status = (
+                "표시"
+                if debug_enabled
+                else "숨김"
+            )
+            print(
+                f"디버그 정보: {status}"
             )
             continue
 
@@ -127,66 +193,33 @@ def run_local_harness(
 
         if command == "/reload":
             try:
-                backend_context = load_local_context(
-                    DATA_DIR
+                backend_context = (
+                    load_local_context(
+                        DATA_DIR
+                    )
                 )
                 pet_id = int(
-                    backend_context["pet"]["id"]
+                    backend_context[
+                        "pet"
+                    ]["id"]
                 )
                 print(
-                    "JSON을 다시 읽었습니다:",
-                    backend_context["pet"].get("name"),
-                    f"(pet_id={pet_id})",
+                    "JSON을 다시 읽었습니다."
                 )
             except Exception as error:
                 print(
-                    "JSON 다시 읽기 실패:",
-                    type(error).__name__,
-                    error,
+                    "JSON을 다시 읽지 못했습니다: "
+                    f"{type(error).__name__}: "
+                    f"{error}"
                 )
             continue
 
         if command == "/state":
-            state_preview = {
-                "route": last_state.get("route"),
-                "triage_status": last_state.get(
-                    "triage_status",
-                    "idle",
-                ),
-                "post_triage_mode": last_state.get(
-                    "post_triage_mode",
-                    False,
-                ),
-                "conversation_history": last_state.get(
-                    "conversation_history",
-                    [],
-                ),
-                "question_strategy": last_state.get(
-                    "question_strategy",
-                    {},
-                ),
-                "follow_up_history": last_state.get(
-                    "follow_up_history",
-                    [],
-                ),
-                "emergency_hits": last_state.get(
-                    "emergency_hits",
-                    [],
-                ),
-                "recovery_hits": last_state.get(
-                    "recovery_hits",
-                    [],
-                ),
-                "rag_done": last_state.get(
-                    "rag_done",
-                    False,
-                ),
-                "errors": last_state.get("errors", []),
-            }
-
             print(
                 json.dumps(
-                    state_preview,
+                    _state_preview(
+                        last_state
+                    ),
                     ensure_ascii=False,
                     indent=2,
                 )
@@ -196,7 +229,9 @@ def run_local_harness(
         append_transcript(
             transcript_path,
             {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": (
+                    datetime.now().isoformat()
+                ),
                 "role": "user",
                 "content": user_text,
                 "is_resume": pending_interrupt,
@@ -210,26 +245,35 @@ def run_local_harness(
             )
         else:
             accumulated_trace = []
-
-            request_payload = {
-                "session_id": conversation_id,
-                "pet_id": pet_id,
-                "user_input": user_text,
-                "context": backend_context,
-            }
-
-            step = start_petcare(request_payload)
+            step = start_petcare(
+                {
+                    "session_id": (
+                        conversation_id
+                    ),
+                    "pet_id": pet_id,
+                    "user_input": user_text,
+                    "context": (
+                        backend_context
+                    ),
+                }
+            )
 
         last_state = step["state"]
 
         for trace_item in step["trace"]:
             if (
                 not accumulated_trace
-                or accumulated_trace[-1] != trace_item
+                or accumulated_trace[-1]
+                != trace_item
             ):
-                accumulated_trace.append(trace_item)
+                accumulated_trace.append(
+                    trace_item
+                )
 
-        if step["status"] == "waiting_for_user":
+        if (
+            step["status"]
+            == "waiting_for_user"
+        ):
             assistant_text = (
                 step["question"]
                 or "추가 확인이 필요합니다."
@@ -238,28 +282,40 @@ def run_local_harness(
             response_type = "follow_up"
         else:
             assistant_text = (
-                step["state"].get("answer")
+                step["state"].get(
+                    "answer"
+                )
                 or "답변을 생성하지 못했습니다."
             )
             pending_interrupt = False
             response_type = "final"
 
-        print(f"Assistant> {assistant_text}")
-        print_step_metadata(
-            step,
-            trace=accumulated_trace,
+        print(
+            f"\nAssistant> {assistant_text}"
         )
+
+        if debug_enabled:
+            print_step_metadata(
+                step,
+                accumulated_trace,
+            )
 
         append_transcript(
             transcript_path,
             {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": (
+                    datetime.now().isoformat()
+                ),
                 "role": "assistant",
                 "type": response_type,
                 "content": assistant_text,
                 "status": step["status"],
-                "route": step["state"].get("route"),
-                "question_field": step.get("field"),
+                "route": step[
+                    "state"
+                ].get("route"),
+                "question_field": (
+                    step.get("field")
+                ),
                 "trace": accumulated_trace,
                 "conversation_history": (
                     step["state"].get(
@@ -267,13 +323,17 @@ def run_local_harness(
                         [],
                     )
                 ),
-                "latency_ms": step["state"].get(
-                    "latency_ms",
-                    {},
+                "latency_ms": (
+                    step["state"].get(
+                        "latency_ms",
+                        {},
+                    )
                 ),
-                "errors": step["state"].get(
-                    "errors",
-                    [],
+                "errors": (
+                    step["state"].get(
+                        "errors",
+                        [],
+                    )
                 ),
             },
         )

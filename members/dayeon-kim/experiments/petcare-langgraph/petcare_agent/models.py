@@ -20,7 +20,7 @@ class BackendContextPayload(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_daily_entries_key(cls, value: Any) -> Any:
-        # 기존 API의 recent_daily_entries 키도 허용합니다.
+
         if isinstance(value, dict):
             normalized = dict(value)
             if (
@@ -116,52 +116,52 @@ class HandoffOutput(BaseModel):
 
 
 class PetCareState(TypedDict, total=False):
-    # 백엔드 입력
+
     session_id: str
     pet_id: int
     user_input: str
     backend_context: dict[str, Any]
 
-    # Context 정리
+
     diary_summary: str
     diagnosis_summary: str
 
-    # Assessment Graph
+
     assessment: dict[str, Any]
     handoff_requested: bool
 
-    # 최종 상태는 세 가지뿐
+
     route: Route | None
 
-    # 같은 session_id 안의 대화 기억
+
     conversation_history: list[dict[str, str]]
 
-    # Triage Episode 상태
+
     triage_status: Literal["idle", "collecting", "completed"]
     previous_triage: dict[str, Any]
     post_triage_mode: bool
 
-    # 증상별 질문 Cycle 상태
+
     question_strategy: dict[str, Any]
 
-    # 추가 질문 이력
+
     follow_up_history: list[dict[str, Any]]
     needs_user_response: bool
 
-    # Safety Guard
+
     emergency_hits: list[dict[str, Any]]
     recovery_hits: list[dict[str, Any]]
 
-    # Chat Agent ↔ RAG Agent
+
     rag_query: str
     rag_chunks: list[dict[str, Any]]
     rag_done: bool
 
-    # 출력
+
     answer: str
     handoff: dict[str, Any]
 
-    # 실행 관측
+
     latency_ms: dict[str, float]
     errors: list[str]
 

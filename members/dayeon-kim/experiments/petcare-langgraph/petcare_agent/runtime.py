@@ -42,8 +42,8 @@ def _append_trace(
     namespace: tuple[str, ...],
     node_name: str,
 ) -> None:
-    # 서브그래프 내부 노드는 이미 자세히 표시되므로
-    # 루트의 assessment_graph/handoff_subgraph 완료 이벤트는 생략합니다.
+
+                                                          
     if (
         not namespace
         and node_name in {"assessment_graph", "handoff_subgraph"}
@@ -78,7 +78,7 @@ def stream_graph_once(
 
         if part_type == "updates":
             if "__interrupt__" in data:
-                # interrupt를 발생시킨 노드도 trace에 표시합니다.
+
                 _append_trace(
                     trace,
                     namespace=namespace,
@@ -111,8 +111,8 @@ def stream_graph_once(
             if isinstance(data, dict):
                 latest_state = data
 
-    # interrupt 시 마지막 values 이벤트가 없거나 일부만 올 수 있으므로
-    # Checkpointer의 최신 상태를 한 번 더 읽습니다.
+
+                                      
     snapshot = petcare_graph.get_state(config)
 
     if snapshot.values:

@@ -41,12 +41,12 @@ def route_after_assessment(
 
     assessment = state.get("assessment", {})
 
-    # 완료된 Episode에 대한 후속 대화는 질문 Cycle을 다시 열지 않습니다.
+
     if state.get("post_triage_mode", False):
         return "chat_agent"
 
-    # 원문에 명확한 응급 표현이 있으면 추가 질문 없이
-    # 즉시 Safety Guard로 보냅니다.
+
+                            
     if has_obvious_emergency_wording(state):
         return "safety_guard"
 
@@ -107,7 +107,7 @@ builder.add_conditional_edges(
     },
 )
 
-# 답변을 받은 뒤 Assessment Graph가 추가 답변까지 다시 구조화합니다.
+
 builder.add_edge("question_manager", "assessment_graph")
 
 builder.add_conditional_edges(
@@ -136,5 +136,3 @@ builder.add_edge("handoff_subgraph", END)
 
 checkpointer = InMemorySaver()
 petcare_graph = builder.compile(checkpointer=checkpointer)
-
-print("LangGraph 컴파일 완료")

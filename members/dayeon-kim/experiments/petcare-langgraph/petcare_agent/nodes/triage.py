@@ -157,19 +157,18 @@ ASSESSMENT_TO_CYCLE_SYMPTOM: dict[str, str] = {
     "urinary_obstruction": "urinary_abnormality",
     "respiratory_issue": "respiratory_issue",
     "respiratory_distress": "respiratory_issue",
-    # severe_deterioration은 Cycle로 변환하지 않습니다.
-    # route_after_assessment에서 Safety Guard로 바로 보냅니다.
+
+                                                     
 }
 
 
 ADDITIONAL_SYMPTOM_QUESTION = (
-    "추가로 확인되는 증상이 있나요? "
-    "호흡이 힘듦, 쓰러짐·반응 저하, 잇몸·혀 색 이상이 있으면 "
-    "그 증상만 바로 적어주세요. "
-    "그 외 구토, 설사, 통증, 배뇨 이상도 적을 수 있어요. "
-    "없으면 '추가 증상 없음'이라고 답해주세요."
+    "추가 증상을 확인하겠습니다. "
+    "호흡이 힘들거나, 쓰러짐·반응 저하, 잇몸·혀 색 이상이 있으면 "
+    "해당 증상만 바로 적어 주세요. "
+    "구토, 설사, 통증, 배뇨 이상도 함께 적을 수 있습니다. "
+    "없으면 '추가 증상 없음'이라고 답해 주세요."
 )
-
 
 
 UNKNOWN_ANSWER_PATTERNS = [
@@ -183,10 +182,11 @@ UNKNOWN_ANSWER_PATTERNS = [
 
 
 UNKNOWN_ADDITIONAL_QUESTION = (
-    "추가 증상이 없는 것으로 확정하지 않고 한 번만 다시 확인할게요.\n"
-    "현재 직접 보이는 범위에서 구토, 설사, 통증, 배뇨 이상, "
-    "호흡 이상, 쓰러짐·반응 저하 중 확인되는 것이 있나요?\n"
-    "정말 확인하기 어렵다면 '확인 못함'이라고 답해주세요."
+    "추가 증상 여부가 확인되지 않았습니다. "
+    "현재 보이는 범위에서 호흡곤란, 쓰러짐·반응 저하, "
+    "잇몸·혀 색 이상, 구토, 설사, 통증, 배뇨 이상 중 "
+    "해당되는 증상이 있나요? "
+    "확인하기 어렵다면 '확인 못함'이라고 답해 주세요."
 )
 
 
@@ -267,7 +267,6 @@ def no_additional_symptoms(text: str) -> bool:
         re.search(pattern, normalized)
         for pattern in NO_ADDITIONAL_PATTERNS
     )
-
 
 
 POST_TRIAGE_ACK_PATTERNS = [
@@ -409,8 +408,8 @@ def plan_question_cycle(
 
     strategy = normalize_question_strategy(state)
 
-    # 하나의 상태 체크에서 질문 응답이 3회에 도달하면
-    # 새로운 Cycle을 열지 않고 Safety Guard에서 결론을 냅니다.
+
+                                              
     if len(
         state.get("follow_up_history", [])
     ) >= MAX_TRIAGE_QUESTION_TURNS:
@@ -466,7 +465,7 @@ def plan_question_cycle(
     )
 
     question_text = (
-        f"{label} 상태를 조금 더 확인할게요.\n"
+        f"{label}에 대해 다음 두 가지를 확인하겠습니다.\n"
         + "\n".join(
             f"{index}. {question}"
             for index, question in enumerate(
