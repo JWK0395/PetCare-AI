@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +20,41 @@ from .runtime import (
     resume_petcare,
     start_petcare,
 )
+
+
+
+def open_outbox_folder(
+    path: str | Path = "tmp/outbox",
+) -> None:
+    folder = Path(path)
+    folder.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    resolved = folder.resolve()
+
+    try:
+        if os.name == "nt":
+            os.startfile(resolved)
+        elif sys.platform == "darwin":
+            subprocess.run(
+                ["open", str(resolved)],
+                check=True,
+            )
+        else:
+            subprocess.run(
+                ["xdg-open", str(resolved)],
+                check=True,
+            )
+
+        print(
+            f"발송함 폴더를 열었습니다: "
+            f"{resolved}"
+        )
+    except Exception:
+        print(
+            f"발송함 위치: {resolved}"
+        )
 
 
 def append_transcript(
@@ -160,6 +198,7 @@ def run_local_harness(
                 "/state 현재 상태 | "
                 "/memory 최근 대화 | "
                 "/reload JSON 다시 읽기 | "
+                "/outbox 이메일 발송함 열기 | "
                 "/quit 종료"
             )
             continue
@@ -212,6 +251,10 @@ def run_local_harness(
                     f"{type(error).__name__}: "
                     f"{error}"
                 )
+            continue
+
+        if command == "/outbox":
+            open_outbox_folder()
             continue
 
         if command == "/state":

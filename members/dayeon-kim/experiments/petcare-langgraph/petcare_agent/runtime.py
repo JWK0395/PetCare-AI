@@ -79,10 +79,30 @@ def stream_graph_once(
         if part_type == "updates":
             if "__interrupt__" in data:
 
+                interrupt_items = data["__interrupt__"]
+                raw_preview = (
+                    getattr(
+                        interrupt_items[0],
+                        "value",
+                        interrupt_items[0],
+                    )
+                    if interrupt_items
+                    else {}
+                )
+                field = (
+                    raw_preview.get("field")
+                    if isinstance(raw_preview, dict)
+                    else None
+                )
+                interrupt_node = (
+                    "hospital_visit_decision"
+                    if field == "hospital_visit"
+                    else "question_manager"
+                )
                 _append_trace(
                     trace,
                     namespace=namespace,
-                    node_name="question_manager",
+                    node_name=interrupt_node,
                 )
 
                 interrupt_items = data["__interrupt__"]
@@ -267,8 +287,15 @@ def request_to_initial_state(
         "rag_query": "",
         "rag_chunks": [],
         "rag_done": False,
+        "visit_decision": "pending",
+        "nearby_hospitals": [],
+        "selected_hospital": {},
         "answer": "",
         "handoff": {},
+        "artifact_path": None,
+        "email_subject": "",
+        "email_body": "",
+        "email_delivery": {},
         "latency_ms": {},
         "errors": [],
     }
