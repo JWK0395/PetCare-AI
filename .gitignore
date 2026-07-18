@@ -1,0 +1,33 @@
+# ---- 환경 변수 / 비밀 파일 (모든 하위 폴더) ----
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*service-account*.json
+
+# ---- Python (server, ai) ----
+**/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---- 로컬 데이터 (DB, 업로드) ----
+server/data/*.db
+server/data/uploads/
+ai/data/rag_docs/*
+!ai/data/rag_docs/README.md
+
+# ---- Node (app) — 상세 규칙은 app/.gitignore ----
+node_modules/
+
+# ---- 로그 / 임시 ----
+*.log
+*.tmp
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
