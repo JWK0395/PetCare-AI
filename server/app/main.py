@@ -9,8 +9,11 @@ from .routers import (
     ai_check,
     auth,
     diagnoses,
+    emergency,
+    hospitals,
     pets,
     records,
+    summaries,
 )
 from .services.seed import seed_if_empty
 
@@ -51,6 +54,9 @@ app.include_router(pets.router)
 app.include_router(records.router)
 app.include_router(diagnoses.router)
 app.include_router(ai_check.router)
+app.include_router(summaries.router)
+app.include_router(hospitals.router)
+app.include_router(emergency.router)
 
 
 @app.get("/health")
