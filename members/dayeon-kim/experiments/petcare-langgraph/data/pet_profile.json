@@ -1,0 +1,23 @@
+{
+  "id": 103,
+  "name": "모카",
+  "species": "cat",
+  "breed": "러시안 블루",
+  "birth_date": null,
+  "sex": null,
+  "is_neutered": null,
+  "weight_kg": 3.9,
+  "size_class": null,
+  "diseases_medications_allergies": [
+    {
+      "type": "disease",
+      "name": "급성 식이성 장염"
+    },
+    {
+      "type": "medication",
+      "name": "장 보호제",
+      "details": "3일분"
+    }
+  ],
+  "created_at": "2026-07-16T17:01:03+09:00"
+}
