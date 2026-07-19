@@ -47,9 +47,107 @@ python -m unittest discover -s tests -v
 API 없이 실행되는 단위 테스트는 OpenAI 키가 없어도 통과해야 한다. corpus와 DB를
 직접 다루는 자세한 순서는 [rag_data/README.md](rag_data/README.md)를 참고한다.
 
-## 2. RAG 담당자가 공용 서버 준비하기
+## 2. Cornell RAG를 순서대로 직접 실행해보기
 
-실제 비밀값을 `.env.example`이나 Git에 기록하지 않는다. 서버의 PowerShell 세션 또는
+아래 명령은 전체 흐름을 눈으로 확인하기 위한 최소 실행 순서다.
+
+```text
+Cornell JSONL → OpenAI 질문 임베딩 → ChromaDB dense 검색
+              → hybrid rerank → gpt-5.4-mini 답변 생성
+              → Cornell 출처가 포함된 응답
+```
+
+실제 비밀값을 `.env.example`이나 Git에 기록하지 않는다. PowerShell 세션에만 설정한다.
+
+```powershell
+$env:OPENAI_API_KEY="OpenAI_API_키"
+```
+
+### 2-1. Cornell JSONL 검사
+
+원본 검색 카드가 올바른 JSONL인지 확인하고, OpenAI embedding API 연결도 가볍게 점검한다.
+
+```powershell
+python tools/manage_cornell_rag_db.py check
+```
+
+정상이라면 청크 수, 입력 SHA-256, DB 경로 쓰기 가능 여부, `text-embedding-3-small`
+1536차원 연결 확인이 출력된다.
+
+### 2-2. ChromaDB dense 색인 만들기
+
+`text-embedding-3-small`로 문서 chunk를 임베딩하고 ChromaDB 컬렉션에 저장한다. 기존
+이전 임베딩 모델 기반 컬렉션과 모델·차원이 다르므로 처음 전환할 때는 rebuild한다.
+
+```powershell
+python tools/manage_cornell_rag_db.py index --rebuild
+```
+
+생성되는 기본 컬렉션 이름은 `cornell_pet_health_text_embedding_3_small_1536`이다.
+`rag_data/chroma/`는 재생 가능한 로컬 색인이므로 Git에 올리지 않는다.
+
+### 2-3. 색인 상태 확인
+
+```powershell
+python tools/manage_cornell_rag_db.py inspect
+```
+
+확인할 기준:
+
+```text
+전체 청크: 732
+컬렉션 설정: embedding_model=text-embedding-3-small
+1536차원이 아닌 벡터: 0
+```
+
+### 2-4. 검색만 따로 보기
+
+답변 생성 없이 dense 검색 결과만 보고 싶을 때 사용한다.
+
+```powershell
+python tools/manage_cornell_rag_db.py query `
+  --query "강아지가 초콜릿을 먹으면 왜 위험해?" `
+  --species dog `
+  --top-k 5
+```
+
+이 명령은 ChromaDB dense 검색 결과를 보여준다. 전체 답변 파이프라인의 hybrid rerank까지
+보려면 다음 CLI를 사용한다.
+
+### 2-5. dense 검색 → hybrid rerank → GPT 답변까지 보기
+
+```powershell
+python tools/run_cornell_rag.py `
+  --question "강아지가 초콜릿을 먹으면 왜 위험해?" `
+  --species dog `
+  --top-k 5 `
+  --debug
+```
+
+`--debug`를 붙이면 다음 정보를 함께 볼 수 있다.
+
+- 질문 임베딩 프롬프트
+- 검색된 chunk 순위
+- OpenAI에 전달되는 SOURCE context
+- 최종 인용 번호
+- Cornell 공식 출처가 붙은 최종 답변
+
+현재 품질 강화는 별도 외부 reranker 모델을 호출하지 않는다. dense 검색 후보를 더 넓게
+가져온 뒤, dense similarity와 BM25 스타일 lexical score를 섞어 최종 top-k를 다시
+정렬하는 deterministic hybrid rerank 방식이다.
+
+### 2-6. 골든 질문 평가
+
+```powershell
+python tools/manage_cornell_rag_db.py evaluate
+```
+
+이 평가는 골든 질문의 기대 문서가 top-k 안에 들어오는지 확인한다. 답변 문장 품질을
+완전히 보장하는 테스트는 아니며, 검색 설정이 최소 기준을 통과하는지 보는 smoke test다.
+
+## 3. RAG 담당자가 공용 서버 준비하기
+
+서버에서도 실제 비밀값을 `.env.example`이나 Git에 기록하지 않는다. PowerShell 세션 또는
 배포 환경의 Secret 설정에만 저장한다.
 
 ```powershell
@@ -69,7 +167,7 @@ python tools/manage_cornell_rag_db.py evaluate
 정상 기준은 732개 청크, 1536차원, 골든 질문 12개 top-5 통과다. ChromaDB는
 재생 가능한 색인이므로 Git에 올리지 않는다.
 
-## 3. 공용 HTTP API 실행하기
+## 4. 공용 HTTP API 실행하기
 
 서버 PC 안에서만 시험할 때:
 
@@ -115,7 +213,7 @@ Invoke-RestMethod `
 
 API 문서는 서버 실행 중 `http://localhost:8000/docs`에서 확인할 수 있다.
 
-## 4. PetCare AI에서의 역할 경계
+## 5. PetCare AI에서의 역할 경계
 
 - PET DB, 진단서 DB, 오늘의 상태 DB는 Context/Trend 기능이 읽는다.
 - Cornell RAG API는 `question`, `species`, `top_k`만 받는다.
@@ -126,7 +224,7 @@ API 문서는 서버 실행 중 `http://localhost:8000/docs`에서 확인할 수
 세부적인 통합 순서와 향후 LangGraph 상태 계약은
 [RAG 통합 가이드](docs/rag-integration-guide.md)에 정리되어 있다.
 
-## 5. Git으로 공유하기
+## 6. Git으로 공유하기
 
 이 기능은 `feature/cornell-rag` 브랜치에서 PR로 공유한다. `.env`, `.venv`,
 `rag_data/chroma`가 Git 변경 목록에 보이면 커밋하지 않는다. 원문 corpus는 비공개 팀
