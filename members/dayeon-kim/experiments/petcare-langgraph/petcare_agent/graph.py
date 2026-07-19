@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal
+from functools import partial
+from typing import Any, Literal
 
-from langgraph.checkpoint.memory import (
-    InMemorySaver,
-)
-from langgraph.graph import (
-    END,
-    START,
-    StateGraph,
-)
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
 
 from .models import PetCareState
 from .nodes.agents import (
@@ -18,9 +13,7 @@ from .nodes.agents import (
     handoff_subgraph,
     rag_agent,
 )
-from .nodes.assessment import (
-    assessment_graph,
-)
+from .nodes.assessment import assessment_graph
 from .nodes.safety import (
     current_priority_emergency_codes,
     safety_guard,
@@ -36,6 +29,10 @@ from .nodes.workflow import (
     search_open_hospital,
     send_emergency_email,
 )
+from .services import (
+    AgentDependencies,
+    build_default_dependencies,
+)
 
 
 def route_after_assessment(
@@ -48,31 +45,18 @@ def route_after_assessment(
     if state.get("errors"):
         return "chat_agent"
 
-    if state.get(
-        "post_triage_mode",
-        False,
-    ):
+    if state.get("post_triage_mode", False):
         return "chat_agent"
 
-    if current_priority_emergency_codes(
-        state
-    ):
+    if current_priority_emergency_codes(state):
         return "safety_guard"
 
-    assessment = state.get(
-        "assessment",
-        {},
-    )
+    assessment = state.get("assessment", {})
 
-    if (
-        assessment.get("intent")
-        == "general_chat"
-    ):
+    if assessment.get("intent") == "general_chat":
         return "chat_agent"
 
-    if plan_question_cycle(
-        state
-    ) is not None:
+    if plan_question_cycle(state) is not None:
         return "question_manager"
 
     return "safety_guard"
@@ -84,10 +68,7 @@ def route_after_safety(
     "emergency_agent",
     "chat_agent",
 ]:
-    if (
-        state.get("route")
-        == "emergency"
-    ):
+    if state.get("route") == "emergency":
         return "emergency_agent"
 
     return "chat_agent"
@@ -104,29 +85,18 @@ def route_after_chat(
     if state.get("errors"):
         return END
 
-    if state.get(
-        "handoff_requested",
-        False,
-    ):
+    if state.get("handoff_requested", False):
         return "handoff_subgraph"
 
     if (
-        state.get("route")
-        == "non_emergency"
-        and not state.get(
-            "rag_done",
-            False,
-        )
+        state.get("route") == "non_emergency"
+        and not state.get("rag_done", False)
     ):
         return "rag_agent"
 
     if (
-        state.get("route")
-        == "non_emergency"
-        and state.get(
-            "visit_decision",
-            "pending",
-        )
+        state.get("route") == "non_emergency"
+        and state.get("visit_decision", "pending")
         == "pending"
     ):
         return "hospital_visit_decision"
@@ -140,154 +110,149 @@ def route_after_visit(
     "handoff_subgraph",
     "close_non_emergency",
 ]:
-    if (
-        state.get("visit_decision")
-        == "yes"
-    ):
+    if state.get("visit_decision") == "yes":
         return "handoff_subgraph"
 
     return "close_non_emergency"
 
 
-builder = StateGraph(
-    PetCareState
-)
+def build_petcare_graph(
+    dependencies: AgentDependencies | None = None,
+    *,
+    checkpointer: Any | None = None,
+) -> Any:
+    deps = dependencies or build_default_dependencies()
+    builder = StateGraph(PetCareState)
 
-builder.add_node(
-    "assessment_graph",
-    assessment_graph,
-)
-builder.add_node(
-    "question_manager",
-    question_manager,
-)
-builder.add_node(
-    "safety_guard",
-    safety_guard,
-)
-builder.add_node(
-    "emergency_agent",
-    emergency_agent,
-)
-builder.add_node(
-    "chat_agent",
-    chat_agent,
-)
-builder.add_node(
-    "rag_agent",
-    rag_agent,
-)
-builder.add_node(
-    "hospital_visit_decision",
-    hospital_visit_decision,
-)
-builder.add_node(
-    "close_non_emergency",
-    close_non_emergency,
-)
-builder.add_node(
-    "handoff_subgraph",
-    handoff_subgraph,
-)
-builder.add_node(
-    "search_open_hospital",
-    search_open_hospital,
-)
-builder.add_node(
-    "generate_emergency_email",
-    generate_emergency_email,
-)
-builder.add_node(
-    "send_emergency_email",
-    send_emergency_email,
-)
+    builder.add_node(
+        "assessment_graph",
+        assessment_graph,
+    )
+    builder.add_node(
+        "question_manager",
+        question_manager,
+    )
+    builder.add_node(
+        "safety_guard",
+        safety_guard,
+    )
+    builder.add_node(
+        "emergency_agent",
+        emergency_agent,
+    )
+    builder.add_node(
+        "chat_agent",
+        partial(
+            chat_agent,
+            dependencies=deps,
+        ),
+    )
+    builder.add_node(
+        "rag_agent",
+        partial(
+            rag_agent,
+            dependencies=deps,
+        ),
+    )
+    builder.add_node(
+        "hospital_visit_decision",
+        hospital_visit_decision,
+    )
+    builder.add_node(
+        "close_non_emergency",
+        close_non_emergency,
+    )
+    builder.add_node(
+        "handoff_subgraph",
+        handoff_subgraph,
+    )
+    builder.add_node(
+        "search_open_hospital",
+        partial(
+            search_open_hospital,
+            dependencies=deps,
+        ),
+    )
+    builder.add_node(
+        "generate_emergency_email",
+        generate_emergency_email,
+    )
+    builder.add_node(
+        "send_emergency_email",
+        partial(
+            send_emergency_email,
+            dependencies=deps,
+        ),
+    )
 
-builder.add_edge(
-    START,
-    "assessment_graph",
-)
-builder.add_conditional_edges(
-    "assessment_graph",
-    route_after_assessment,
-    {
-        "question_manager": (
-            "question_manager"
-        ),
-        "safety_guard": "safety_guard",
-        "chat_agent": "chat_agent",
-    },
-)
-builder.add_edge(
-    "question_manager",
-    "assessment_graph",
-)
-builder.add_conditional_edges(
-    "safety_guard",
-    route_after_safety,
-    {
-        "emergency_agent": (
-            "emergency_agent"
-        ),
-        "chat_agent": "chat_agent",
-    },
-)
+    builder.add_edge(START, "assessment_graph")
+    builder.add_conditional_edges(
+        "assessment_graph",
+        route_after_assessment,
+        {
+            "question_manager": "question_manager",
+            "safety_guard": "safety_guard",
+            "chat_agent": "chat_agent",
+        },
+    )
+    builder.add_edge(
+        "question_manager",
+        "assessment_graph",
+    )
+    builder.add_conditional_edges(
+        "safety_guard",
+        route_after_safety,
+        {
+            "emergency_agent": "emergency_agent",
+            "chat_agent": "chat_agent",
+        },
+    )
 
-builder.add_edge(
-    "emergency_agent",
-    "search_open_hospital",
-)
-builder.add_edge(
-    "search_open_hospital",
-    "generate_emergency_email",
-)
-builder.add_edge(
-    "generate_emergency_email",
-    "send_emergency_email",
-)
-builder.add_edge(
-    "send_emergency_email",
-    END,
-)
+    builder.add_edge(
+        "emergency_agent",
+        "search_open_hospital",
+    )
+    builder.add_edge(
+        "search_open_hospital",
+        "generate_emergency_email",
+    )
+    builder.add_edge(
+        "generate_emergency_email",
+        "send_emergency_email",
+    )
+    builder.add_edge("send_emergency_email", END)
 
-builder.add_conditional_edges(
-    "chat_agent",
-    route_after_chat,
-    {
-        "rag_agent": "rag_agent",
-        "handoff_subgraph": (
-            "handoff_subgraph"
-        ),
-        "hospital_visit_decision": (
-            "hospital_visit_decision"
-        ),
-        END: END,
-    },
-)
-builder.add_edge(
-    "rag_agent",
-    "chat_agent",
-)
-builder.add_conditional_edges(
-    "hospital_visit_decision",
-    route_after_visit,
-    {
-        "handoff_subgraph": (
-            "handoff_subgraph"
-        ),
-        "close_non_emergency": (
-            "close_non_emergency"
-        ),
-    },
-)
-builder.add_edge(
-    "handoff_subgraph",
-    END,
-)
-builder.add_edge(
-    "close_non_emergency",
-    END,
-)
+    builder.add_conditional_edges(
+        "chat_agent",
+        route_after_chat,
+        {
+            "rag_agent": "rag_agent",
+            "handoff_subgraph": "handoff_subgraph",
+            "hospital_visit_decision": (
+                "hospital_visit_decision"
+            ),
+            END: END,
+        },
+    )
+    builder.add_edge("rag_agent", "chat_agent")
+    builder.add_conditional_edges(
+        "hospital_visit_decision",
+        route_after_visit,
+        {
+            "handoff_subgraph": "handoff_subgraph",
+            "close_non_emergency": "close_non_emergency",
+        },
+    )
+    builder.add_edge("handoff_subgraph", END)
+    builder.add_edge("close_non_emergency", END)
 
-petcare_graph = builder.compile(
-    checkpointer=InMemorySaver()
-)
+    return builder.compile(
+        checkpointer=(
+            checkpointer
+            if checkpointer is not None
+            else InMemorySaver()
+        )
+    )
+
+
+petcare_graph = build_petcare_graph()

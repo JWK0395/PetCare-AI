@@ -4,16 +4,17 @@ from typing import Any
 
 from langgraph.types import Command
 
-from .graph import petcare_graph
+from .graph import build_petcare_graph
 from .models import (
     GraphStartRequest,
     GraphStepResult,
     PetCareState,
+    QuestionStrategy,
 )
-from .nodes.triage import (
-    default_question_strategy,
-    should_continue_previous_triage,
-    should_open_new_triage,
+from .nodes.triage import should_open_new_triage
+from .services import (
+    AgentDependencies,
+    build_default_dependencies,
 )
 from .utils import trim_conversation_history
 
@@ -43,11 +44,10 @@ def _append_trace(
     namespace: tuple[str, ...],
     node_name: str,
 ) -> None:
-
-                                                          
     if (
         not namespace
-        and node_name in {"assessment_graph", "handoff_subgraph"}
+        and node_name
+        in {"assessment_graph", "handoff_subgraph"}
     ):
         return
 
@@ -55,198 +55,6 @@ def _append_trace(
 
     if not trace or trace[-1] != label:
         trace.append(label)
-
-
-def stream_graph_once(
-    graph_input: Any,
-    *,
-    config: dict[str, Any],
-) -> tuple[PetCareState, list[str], dict[str, Any] | None]:
-    trace: list[str] = []
-    latest_state: PetCareState = {}
-    interrupt_payload: dict[str, Any] | None = None
-
-    for part in petcare_graph.stream(
-        graph_input,
-        config=config,
-        stream_mode=["updates", "values"],
-        subgraphs=True,
-        version="v2",
-    ):
-        part_type = part["type"]
-        namespace = tuple(part.get("ns", ()))
-        data = part["data"]
-
-        if part_type == "updates":
-            if "__interrupt__" in data:
-
-                interrupt_items = data["__interrupt__"]
-                raw_preview = (
-                    getattr(
-                        interrupt_items[0],
-                        "value",
-                        interrupt_items[0],
-                    )
-                    if interrupt_items
-                    else {}
-                )
-                field = (
-                    raw_preview.get("field")
-                    if isinstance(raw_preview, dict)
-                    else None
-                )
-                interrupt_node = (
-                    "hospital_visit_decision"
-                    if field == "hospital_visit"
-                    else "question_manager"
-                )
-                _append_trace(
-                    trace,
-                    namespace=namespace,
-                    node_name=interrupt_node,
-                )
-
-                interrupt_items = data["__interrupt__"]
-
-                if interrupt_items:
-                    raw_value = getattr(
-                        interrupt_items[0],
-                        "value",
-                        interrupt_items[0],
-                    )
-                    interrupt_payload = (
-                        raw_value
-                        if isinstance(raw_value, dict)
-                        else {"question": str(raw_value)}
-                    )
-                continue
-
-            for node_name in data:
-                _append_trace(
-                    trace,
-                    namespace=namespace,
-                    node_name=node_name,
-                )
-
-        elif part_type == "values":
-            if isinstance(data, dict):
-                latest_state = data
-
-
-                                      
-    snapshot = petcare_graph.get_state(config)
-
-    if snapshot.values:
-        latest_state = dict(snapshot.values)
-
-    return latest_state, trace, interrupt_payload
-
-
-def load_previous_session_context(
-    *,
-    session_id: str,
-) -> dict[str, Any]:
-    config = {
-        "configurable": {
-            "thread_id": session_id,
-        }
-    }
-
-    snapshot = petcare_graph.get_state(config)
-    values = dict(snapshot.values or {})
-
-    history = values.get(
-        "conversation_history",
-        [],
-    )
-
-    normalized_history = [
-        {
-            "role": str(item.get("role", "")),
-            "content": str(item.get("content", "")),
-        }
-        for item in history
-        if isinstance(item, dict)
-    ]
-
-    previous_triage: dict[str, Any] = {}
-
-    if values.get("triage_status") == "completed":
-        previous_triage = {
-            "route": values.get("route"),
-            "answer": values.get("answer"),
-            "emergency_hits": values.get(
-                "emergency_hits",
-                [],
-            ),
-            "recovery_hits": values.get(
-                "recovery_hits",
-                [],
-            ),
-            "question_strategy": values.get(
-                "question_strategy",
-                {},
-            ),
-            "follow_up_history": values.get(
-                "follow_up_history",
-                [],
-            ),
-            "visit_decision": values.get(
-                "visit_decision",
-                "pending",
-            ),
-            "artifact_path": values.get(
-                "artifact_path"
-            ),
-        }
-
-    return {
-        "conversation_history": (
-            trim_conversation_history(
-                normalized_history
-            )
-        ),
-        "triage_status": values.get(
-            "triage_status",
-            "idle",
-        ),
-        "previous_triage": previous_triage,
-    }
-
-
-def _copy_strategy_for_continuation(
-    previous_triage: dict[str, Any],
-) -> dict[str, Any]:
-    strategy = default_question_strategy()
-    previous_strategy = previous_triage.get(
-        "question_strategy",
-        {},
-    )
-
-    if isinstance(previous_strategy, dict):
-        strategy.update(previous_strategy)
-
-    for key in [
-        "detected_symptoms",
-        "completed_cycles",
-        "cycle_history",
-        "additional_checks",
-    ]:
-        value = strategy.get(key, [])
-        strategy[key] = (
-            list(value)
-            if isinstance(value, list)
-            else []
-        )
-
-    strategy["active_symptom"] = None
-    strategy["awaiting_additional_check"] = False
-    strategy["additional_answer_status"] = None
-    strategy["unknown_additional_retry_count"] = 0
-    strategy["unknown_additional_unresolved"] = False
-    strategy["finished"] = False
-
-    return strategy
 
 
 def request_to_initial_state(
@@ -266,7 +74,6 @@ def request_to_initial_state(
         "conversation_history",
         [],
     )
-
     conversation_history = list(previous_history)
     conversation_history.append(
         {
@@ -279,104 +86,63 @@ def request_to_initial_state(
         previous_session.get("triage_status")
         == "completed"
     )
-    previous_triage = previous_session.get(
-        "previous_triage",
-        {},
-    )
-
     opens_new_triage = should_open_new_triage(
         request.user_input
-    )
-    continues_previous = (
-        previous_completed
-        and previous_triage.get("route")
-        == "non_emergency"
-        and opens_new_triage
-        and should_continue_previous_triage(
-            request.user_input
-        )
     )
     post_triage_mode = (
         previous_completed
         and not opens_new_triage
     )
 
-    if continues_previous:
-        question_strategy = (
-            _copy_strategy_for_continuation(
-                previous_triage
-            )
-        )
-        follow_up_history = list(
-            previous_triage.get(
-                "follow_up_history",
-                [],
-            )
-        )
-        triage_status = "collecting"
-        route = None
-    else:
-        question_strategy = default_question_strategy()
-        follow_up_history = []
-        triage_status = (
-            "completed"
-            if post_triage_mode
-            else "idle"
-        )
-        route = (
-            "general_chat"
-            if post_triage_mode
-            else None
-        )
-
     initial_state: PetCareState = {
         "session_id": request.session_id,
         "pet_id": request.pet_id,
         "user_input": request.user_input,
         "backend_context": request.context.model_dump(),
+        "location": (
+            request.location.model_dump()
+            if request.location is not None
+            else None
+        ),
         "diary_summary": "",
         "diagnosis_summary": "",
         "assessment": {},
         "handoff_requested": False,
-        "route": route,
+        "route": (
+            "general_chat"
+            if post_triage_mode
+            else None
+        ),
         "conversation_history": (
             trim_conversation_history(
                 conversation_history
             )
         ),
-        "triage_status": triage_status,
+        "triage_status": (
+            "completed"
+            if post_triage_mode
+            else "idle"
+        ),
         "previous_triage": (
-            previous_triage
-            if (post_triage_mode or continues_previous)
+            previous_session.get(
+                "previous_triage",
+                {},
+            )
+            if post_triage_mode
             else {}
         ),
         "post_triage_mode": post_triage_mode,
-        "question_strategy": question_strategy,
-        "follow_up_history": follow_up_history,
+        "question_strategy": (
+            QuestionStrategy().model_dump()
+        ),
+        "follow_up_history": [],
         "needs_user_response": False,
-        "emergency_hits": (
-            list(
-                previous_triage.get(
-                    "emergency_hits",
-                    [],
-                )
-            )
-            if continues_previous
-            else []
-        ),
-        "recovery_hits": (
-            list(
-                previous_triage.get(
-                    "recovery_hits",
-                    [],
-                )
-            )
-            if continues_previous
-            else []
-        ),
+        "emergency_hits": [],
+        "recovery_hits": [],
         "rag_query": "",
         "rag_chunks": [],
         "rag_done": False,
+        "rag_status": "not_started",
         "visit_decision": "pending",
         "nearby_hospitals": [],
         "selected_hospital": {},
@@ -386,113 +152,335 @@ def request_to_initial_state(
         "email_subject": "",
         "email_body": "",
         "email_delivery": {},
+        "prompt_context_stats": {},
         "latency_ms": {},
+        "warnings": [],
         "errors": [],
     }
 
     return request, initial_state
 
 
-def start_petcare(
-    request_payload: dict[str, Any] | GraphStartRequest,
-) -> GraphStepResult:
-    request = (
-        request_payload
-        if isinstance(request_payload, GraphStartRequest)
-        else GraphStartRequest.model_validate(
-            request_payload
+class PetCareRuntime:
+    """의존성과 체크포인터를 실행 인스턴스 단위로 보관한다."""
+
+    def __init__(
+        self,
+        dependencies: AgentDependencies | None = None,
+    ) -> None:
+        self.dependencies = (
+            dependencies
+            or build_default_dependencies()
         )
-    )
+        self.graph = build_petcare_graph(
+            self.dependencies
+        )
 
-    previous_session = load_previous_session_context(
-        session_id=request.session_id,
-    )
+    def stream_graph_once(
+        self,
+        graph_input: Any,
+        *,
+        config: dict[str, Any],
+    ) -> tuple[
+        PetCareState,
+        list[str],
+        dict[str, Any] | None,
+    ]:
+        trace: list[str] = []
+        latest_state: PetCareState = {}
+        interrupt_payload: dict[str, Any] | None = None
 
-    request, initial_state = request_to_initial_state(
-        request,
-        previous_session=previous_session,
-    )
+        for part in self.graph.stream(
+            graph_input,
+            config=config,
+            stream_mode=["updates", "values"],
+            subgraphs=True,
+            version="v2",
+        ):
+            part_type = part["type"]
+            namespace = tuple(part.get("ns", ()))
+            data = part["data"]
 
-    config = {
-        "configurable": {
-            "thread_id": request.session_id,
-        },
-        "recursion_limit": 30,
-    }
+            if part_type == "updates":
+                if "__interrupt__" in data:
+                    interrupt_items = data["__interrupt__"]
+                    raw_preview = (
+                        getattr(
+                            interrupt_items[0],
+                            "value",
+                            interrupt_items[0],
+                        )
+                        if interrupt_items
+                        else {}
+                    )
+                    field = (
+                        raw_preview.get("field")
+                        if isinstance(raw_preview, dict)
+                        else None
+                    )
+                    interrupt_node = (
+                        "hospital_visit_decision"
+                        if field == "hospital_visit"
+                        else "question_manager"
+                    )
+                    _append_trace(
+                        trace,
+                        namespace=namespace,
+                        node_name=interrupt_node,
+                    )
 
-    state, trace, interrupt_payload = stream_graph_once(
-        initial_state,
-        config=config,
-    )
+                    if interrupt_items:
+                        raw_value = getattr(
+                            interrupt_items[0],
+                            "value",
+                            interrupt_items[0],
+                        )
+                        interrupt_payload = (
+                            raw_value
+                            if isinstance(raw_value, dict)
+                            else {"question": str(raw_value)}
+                        )
+                    continue
 
-    if interrupt_payload is not None:
+                for node_name in data:
+                    _append_trace(
+                        trace,
+                        namespace=namespace,
+                        node_name=node_name,
+                    )
+
+            elif (
+                part_type == "values"
+                and isinstance(data, dict)
+            ):
+                latest_state = data
+
+        snapshot = self.graph.get_state(config)
+
+        if snapshot.values:
+            latest_state = dict(snapshot.values)
+
+        return (
+            latest_state,
+            trace,
+            interrupt_payload,
+        )
+
+    def load_previous_session_context(
+        self,
+        *,
+        session_id: str,
+    ) -> dict[str, Any]:
+        config = {
+            "configurable": {
+                "thread_id": session_id,
+            }
+        }
+        snapshot = self.graph.get_state(config)
+        values = dict(snapshot.values or {})
+        history = values.get(
+            "conversation_history",
+            [],
+        )
+        normalized_history = [
+            {
+                "role": str(item.get("role", "")),
+                "content": str(item.get("content", "")),
+            }
+            for item in history
+            if isinstance(item, dict)
+        ]
+
+        previous_triage: dict[str, Any] = {}
+
+        if values.get("triage_status") == "completed":
+            previous_triage = {
+                "route": values.get("route"),
+                "answer": values.get("answer"),
+                "emergency_hits": values.get(
+                    "emergency_hits",
+                    [],
+                ),
+                "recovery_hits": values.get(
+                    "recovery_hits",
+                    [],
+                ),
+                "question_strategy": values.get(
+                    "question_strategy",
+                    {},
+                ),
+                "follow_up_history": values.get(
+                    "follow_up_history",
+                    [],
+                ),
+            }
+
         return {
-            "status": "waiting_for_user",
+            "conversation_history": (
+                trim_conversation_history(
+                    normalized_history
+                )
+            ),
+            "triage_status": values.get(
+                "triage_status",
+                "idle",
+            ),
+            "previous_triage": previous_triage,
+        }
+
+    def start(
+        self,
+        request_payload: (
+            dict[str, Any]
+            | GraphStartRequest
+        ),
+    ) -> GraphStepResult:
+        request = (
+            request_payload
+            if isinstance(
+                request_payload,
+                GraphStartRequest,
+            )
+            else GraphStartRequest.model_validate(
+                request_payload
+            )
+        )
+        previous_session = (
+            self.load_previous_session_context(
+                session_id=request.session_id,
+            )
+        )
+        request, initial_state = request_to_initial_state(
+            request,
+            previous_session=previous_session,
+        )
+        config = {
+            "configurable": {
+                "thread_id": request.session_id,
+            },
+            "recursion_limit": 30,
+        }
+        state, trace, interrupt_payload = (
+            self.stream_graph_once(
+                initial_state,
+                config=config,
+            )
+        )
+
+        if interrupt_payload is not None:
+            return {
+                "status": "waiting_for_user",
+                "session_id": request.session_id,
+                "state": state,
+                "trace": trace,
+                "question": str(
+                    interrupt_payload.get(
+                        "question",
+                        "추가 확인이 필요합니다.",
+                    )
+                ),
+                "field": interrupt_payload.get("field"),
+            }
+
+        return {
+            "status": "completed",
             "session_id": request.session_id,
             "state": state,
             "trace": trace,
-            "question": str(
-                interrupt_payload.get(
-                    "question",
-                    "추가 확인이 필요합니다.",
-                )
-            ),
-            "field": interrupt_payload.get("field"),
+            "question": None,
+            "field": None,
         }
 
-    return {
-        "status": "completed",
-        "session_id": request.session_id,
-        "state": state,
-        "trace": trace,
-        "question": None,
-        "field": None,
-    }
+    def resume(
+        self,
+        *,
+        session_id: str,
+        answer: str,
+    ) -> GraphStepResult:
+        config = {
+            "configurable": {
+                "thread_id": session_id,
+            },
+            "recursion_limit": 30,
+        }
+        state, trace, interrupt_payload = (
+            self.stream_graph_once(
+                Command(resume=answer),
+                config=config,
+            )
+        )
+
+        if interrupt_payload is not None:
+            return {
+                "status": "waiting_for_user",
+                "session_id": session_id,
+                "state": state,
+                "trace": trace,
+                "question": str(
+                    interrupt_payload.get(
+                        "question",
+                        "추가 확인이 필요합니다.",
+                    )
+                ),
+                "field": interrupt_payload.get("field"),
+            }
+
+        return {
+            "status": "completed",
+            "session_id": session_id,
+            "state": state,
+            "trace": trace,
+            "question": None,
+            "field": None,
+        }
+
+
+_default_runtime: PetCareRuntime | None = None
+
+
+def get_default_runtime() -> PetCareRuntime:
+    global _default_runtime
+
+    if _default_runtime is None:
+        _default_runtime = PetCareRuntime()
+
+    return _default_runtime
+
+
+def create_petcare_runtime(
+    dependencies: AgentDependencies | None = None,
+) -> PetCareRuntime:
+    return PetCareRuntime(dependencies)
+
+
+def start_petcare(
+    request_payload: dict[str, Any] | GraphStartRequest,
+    *,
+    runtime: PetCareRuntime | None = None,
+) -> GraphStepResult:
+    active_runtime = runtime or get_default_runtime()
+    return active_runtime.start(request_payload)
 
 
 def resume_petcare(
     *,
     session_id: str,
     answer: str,
+    runtime: PetCareRuntime | None = None,
 ) -> GraphStepResult:
-    config = {
-        "configurable": {
-            "thread_id": session_id,
-        },
-        "recursion_limit": 30,
-    }
-
-    state, trace, interrupt_payload = stream_graph_once(
-        Command(resume=answer),
-        config=config,
+    active_runtime = runtime or get_default_runtime()
+    return active_runtime.resume(
+        session_id=session_id,
+        answer=answer,
     )
-
-    if interrupt_payload is not None:
-        return {
-            "status": "waiting_for_user",
-            "session_id": session_id,
-            "state": state,
-            "trace": trace,
-            "question": str(
-                interrupt_payload.get(
-                    "question",
-                    "추가 확인이 필요합니다.",
-                )
-            ),
-            "field": interrupt_payload.get("field"),
-        }
-
-    return {
-        "status": "completed",
-        "session_id": session_id,
-        "state": state,
-        "trace": trace,
-        "question": None,
-        "field": None,
-    }
 
 
 def run_petcare(
     request_payload: dict[str, Any] | GraphStartRequest,
+    *,
+    runtime: PetCareRuntime | None = None,
 ) -> GraphStepResult:
-    return start_petcare(request_payload)
+    return start_petcare(
+        request_payload,
+        runtime=runtime,
+    )

@@ -304,6 +304,7 @@ def make_backend_request(
     *,
     session_prefix: str = "local",
     session_id: str | None = None,
+    location: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     pet_id = context.get("pet", {}).get("id")
 
@@ -317,9 +318,14 @@ def make_backend_request(
         or f"{session_prefix}-{uuid.uuid4().hex[:8]}"
     )
 
-    return {
+    request = {
         "session_id": resolved_session_id,
         "pet_id": int(pet_id),
         "user_input": user_input,
         "context": context,
     }
+
+    if location is not None:
+        request["location"] = location
+
+    return request

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from petcare_agent.nodes.agents import (
-    emergency_agent,
-)
-from petcare_agent.response import (
-    clean_agent_response,
-)
+from petcare_agent.nodes.agents import emergency_agent
+from petcare_agent.response import clean_agent_response
 
 
 def test_emoji_cleanup() -> None:
@@ -39,6 +35,7 @@ def test_emergency_response_style() -> None:
     answer = step["answer"]
 
     assert "현재 상태는" in answer
-    assert "지금 해야 할 일" in answer
+    assert "즉시 진료가 우선" in answer
+    assert "가까운 운영 중 동물병원" in answer
     assert "ER-RESP-001" not in answer
     assert "호흡곤란" in answer

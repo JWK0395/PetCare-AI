@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .models import HandoffDocument
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import (
@@ -184,10 +186,16 @@ def _section_table(
 
 def create_handoff_pdf(
     *,
-    handoff: dict[str, Any],
+    handoff: HandoffDocument | dict[str, Any],
     session_id: str,
     output_dir: str | Path = "artifacts",
 ) -> str:
+    handoff = (
+        handoff.model_dump()
+        if isinstance(handoff, HandoffDocument)
+        else HandoffDocument.model_validate(handoff).model_dump()
+    )
+
     target_dir = Path(output_dir)
     target_dir.mkdir(
         parents=True,

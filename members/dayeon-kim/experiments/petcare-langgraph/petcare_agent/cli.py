@@ -17,6 +17,8 @@ from .models import (
     PetCareState,
 )
 from .runtime import (
+    PetCareRuntime,
+    create_petcare_runtime,
     resume_petcare,
     start_petcare,
 )
@@ -115,6 +117,9 @@ def _state_preview(
         "emergency_hits",
         "recovery_hits",
         "rag_done",
+        "rag_status",
+        "prompt_context_stats",
+        "warnings",
         "errors",
     ]
 
@@ -128,7 +133,9 @@ def run_local_harness(
     backend_context: dict[str, Any],
     *,
     pet_id: int = 103,
+    runtime: PetCareRuntime | None = None,
 ) -> None:
+    active_runtime = runtime or create_petcare_runtime()
     conversation_id = (
         f"local_{datetime.now():%Y%m%d_%H%M%S}"
     )
@@ -285,6 +292,7 @@ def run_local_harness(
             step = resume_petcare(
                 session_id=conversation_id,
                 answer=user_text,
+                runtime=active_runtime,
             )
         else:
             accumulated_trace = []
@@ -298,7 +306,8 @@ def run_local_harness(
                     "context": (
                         backend_context
                     ),
-                }
+                },
+                runtime=active_runtime,
             )
 
         last_state = step["state"]

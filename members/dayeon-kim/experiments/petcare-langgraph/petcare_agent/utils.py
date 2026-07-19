@@ -7,6 +7,8 @@ from .models import PetCareState
 
 
 MAX_CONVERSATION_MESSAGES = 20
+MAX_PROMPT_MESSAGES = 8
+MAX_PROMPT_HISTORY_CHARS = 6000
 
 
 def trim_conversation_history(
@@ -37,6 +39,8 @@ def format_conversation_history(
     history: list[dict[str, str]],
     *,
     exclude_last_user_message: bool = False,
+    max_messages: int = MAX_PROMPT_MESSAGES,
+    max_chars: int = MAX_PROMPT_HISTORY_CHARS,
 ) -> str:
     messages = list(history)
 
@@ -46,6 +50,8 @@ def format_conversation_history(
         and messages[-1].get("role") == "user"
     ):
         messages = messages[:-1]
+
+    messages = messages[-max_messages:]
 
     if not messages:
         return "이전 대화 없음"
@@ -59,7 +65,15 @@ def format_conversation_history(
             f"{label}: {item.get('content', '')}"
         )
 
-    return "\n".join(lines)
+    text = "\n".join(lines)
+
+    if len(text) > max_chars:
+        text = text[-max_chars:]
+        first_newline = text.find("\n")
+        if first_newline >= 0:
+            text = text[first_newline + 1 :]
+
+    return text
 
 
 def node_result(
@@ -79,6 +93,30 @@ def node_result(
         **updates,
         "latency_ms": latency,
     }
+
+
+def add_warning(
+    state: PetCareState,
+    *,
+    node_name: str,
+    warning: str,
+    started_at: float,
+    updates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    warnings = list(state.get("warnings", []))
+    warnings.append(
+        f"{node_name}: {warning}"
+    )
+
+    return node_result(
+        state,
+        node_name=node_name,
+        started_at=started_at,
+        updates={
+            **(updates or {}),
+            "warnings": warnings,
+        },
+    )
 
 
 def add_error(

@@ -4,7 +4,7 @@ from datetime import date, datetime
 import re
 from typing import Any
 
-from .models import HandoffOutput, PetCareState
+from .models import HandoffDocument, HandoffOutput, PetCareState
 
 
 SPECIES_LABELS = {
@@ -25,7 +25,7 @@ SYMPTOM_LABELS = {
     "fever": "발열 또는 체온 상승",
     "lethargy": "기력 저하",
     "pain": "통증",
-    "pallor": "창백함 또는 점막 색 변화",
+    "pallor": "창백함",
     "urinary_abnormality": "배뇨 이상",
     "respiratory_issue": "호흡 이상",
     "respiratory_distress": "호흡곤란",
@@ -618,7 +618,7 @@ def build_handoff_summary_from_state(
 def build_handoff_document(
     state: PetCareState,
     summary: HandoffOutput,
-) -> dict[str, Any]:
+) -> HandoffDocument:
     context = state.get(
         "backend_context",
         {},
@@ -627,7 +627,7 @@ def build_handoff_document(
 
     generated_at = datetime.now().astimezone()
 
-    return {
+    return HandoffDocument.model_validate({
         "document_info": {
             "title": (
                 "PetCare AI 병원 전달용 상태 요약"
@@ -703,7 +703,7 @@ def build_handoff_document(
             ),
             "course": summary.course,
         },
-    }
+    })
 
 
 def _list_lines(
@@ -721,14 +721,19 @@ def _list_lines(
 
 
 def format_handoff_text(
-    document: dict[str, Any],
+    document: HandoffDocument | dict[str, Any],
     *,
     hospital_name: str | None = None,
 ) -> str:
-    info = document["document_info"]
-    pet = document["pet_info"]
-    status = document["status"]
-    clinical = document[
+    normalized = (
+        document.model_dump()
+        if isinstance(document, HandoffDocument)
+        else HandoffDocument.model_validate(document).model_dump()
+    )
+    info = normalized["document_info"]
+    pet = normalized["pet_info"]
+    status = normalized["status"]
+    clinical = normalized[
         "clinical_summary"
     ]
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from email.message import EmailMessage
 from pathlib import Path
 import os
@@ -18,16 +19,41 @@ from .models import (
 )
 
 
+class LLMService(Protocol):
+    def parse(
+        self,
+        *,
+        schema: type[BaseModel],
+        system_prompt: str,
+        user_prompt: str,
+    ) -> BaseModel:
+        ...
+
+    def text(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> str:
+        ...
+
+
 class OpenAIService:
     def __init__(
         self,
         api_key: str,
         model: str,
     ) -> None:
-        self.client = OpenAI(
-            api_key=api_key
-        )
+        self.client = OpenAI(api_key=api_key)
         self.model = model
+
+    @classmethod
+    def from_env(cls) -> "OpenAIService":
+        settings = Settings.from_env()
+        return cls(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+        )
 
     def parse(
         self,
@@ -36,27 +62,24 @@ class OpenAIService:
         system_prompt: str,
         user_prompt: str,
     ) -> BaseModel:
-        response = (
-            self.client.responses.parse(
-                model=self.model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": user_prompt,
-                    },
-                ],
-                text_format=schema,
-            )
+        response = self.client.responses.parse(
+            model=self.model,
+            input=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            text_format=schema,
         )
 
         if response.output_parsed is None:
             raise RuntimeError(
-                "OpenAI 구조화 출력이 "
-                "비어 있습니다."
+                "OpenAI 구조화 출력이 비어 있습니다."
             )
 
         return response.output_parsed
@@ -67,56 +90,26 @@ class OpenAIService:
         system_prompt: str,
         user_prompt: str,
     ) -> str:
-        response = (
-            self.client.responses.create(
-                model=self.model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": user_prompt,
-                    },
-                ],
-            )
+        response = self.client.responses.create(
+            model=self.model,
+            input=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
         )
 
         if not response.output_text:
             raise RuntimeError(
-                "OpenAI 텍스트 출력이 "
-                "비어 있습니다."
+                "OpenAI 텍스트 출력이 비어 있습니다."
             )
 
         return response.output_text.strip()
-
-
-_llm_service: OpenAIService | Any | None = (
-    None
-)
-
-
-def get_llm_service() -> OpenAIService:
-    global _llm_service
-
-    if _llm_service is None:
-        settings = Settings.from_env()
-        _llm_service = OpenAIService(
-            api_key=(
-                settings.openai_api_key
-            ),
-            model=settings.openai_model,
-        )
-
-    return _llm_service
-
-
-def set_llm_service(
-    service: OpenAIService | Any,
-) -> None:
-    global _llm_service
-    _llm_service = service
 
 
 class RAGProvider(Protocol):
@@ -130,32 +123,38 @@ class RAGProvider(Protocol):
         ...
 
 
+class NullRAGProvider:
+    """RAG 미연결 상태에서 외부 호출 없이 빈 결과를 반환한다."""
+
+    def search(
+        self,
+        *,
+        query: str,
+        pet_context: dict[str, Any],
+        limit: int = 5,
+    ) -> list[RAGChunk]:
+        del query, pet_context, limit
+        return []
+
+
 class DemoRAGProvider:
+    """명시적으로 선택한 로컬 데모에서만 사용하는 샘플 Provider."""
+
     def __init__(self) -> None:
         self.documents = [
             RAGChunk(
                 source_id="guide-001",
-                title=(
-                    "검수 완료 반려동물 "
-                    "구토 보호자 안내"
-                ),
-                organization=(
-                    "PetCare AI Demo"
-                ),
+                title="검수 완료 반려동물 구토 보호자 안내",
+                organization="PetCare AI Demo",
                 version="2026.1",
                 page=3,
                 text=(
-                    "구토가 반복되거나 "
-                    "기력 저하, 식욕 감소와 "
-                    "함께 나타나는 경우에는 "
-                    "동물병원 상담이 권장된다."
+                    "구토가 반복되거나 기력 저하, 식욕 감소와 "
+                    "함께 나타나는 경우에는 동물병원 상담이 권장된다."
                 ),
                 score=0.95,
                 metadata={
-                    "species": [
-                        "dog",
-                        "cat",
-                    ],
+                    "species": ["dog", "cat"],
                     "topic": "vomiting",
                 },
             )
@@ -168,6 +167,7 @@ class DemoRAGProvider:
         pet_context: dict[str, Any],
         limit: int = 5,
     ) -> list[RAGChunk]:
+        del query, pet_context
         return self.documents[:limit]
 
 
@@ -179,9 +179,7 @@ class TeamRAGAdapter:
             list[dict[str, Any]],
         ],
     ) -> None:
-        self.search_function = (
-            search_function
-        )
+        self.search_function = search_function
 
     def search(
         self,
@@ -196,27 +194,9 @@ class TeamRAGAdapter:
             limit=limit,
         )
         return [
-            RAGChunk.model_validate(
-                item
-            )
+            RAGChunk.model_validate(item)
             for item in results
         ]
-
-
-_rag_provider: RAGProvider = (
-    DemoRAGProvider()
-)
-
-
-def get_rag_provider() -> RAGProvider:
-    return _rag_provider
-
-
-def set_rag_provider(
-    provider: RAGProvider,
-) -> None:
-    global _rag_provider
-    _rag_provider = provider
 
 
 class HospitalSearchProvider(Protocol):
@@ -246,14 +226,9 @@ class DemoHospitalSearchProvider:
             HospitalInfo(
                 hospital_id="demo-001",
                 name="가까운 24시 동물병원",
-                address=(
-                    address
-                    or "현재 위치 인근"
-                ),
+                address=address or "현재 위치 인근",
                 phone="051-000-0000",
-                email=(
-                    "emergency@example.com"
-                ),
+                email="emergency@example.com",
                 distance_km=1.2,
                 is_open=True,
                 open_status="운영 중",
@@ -270,9 +245,7 @@ class TeamHospitalSearchAdapter:
             list[dict[str, Any]],
         ],
     ) -> None:
-        self.search_function = (
-            search_function
-        )
+        self.search_function = search_function
 
     def search_open(
         self,
@@ -287,28 +260,9 @@ class TeamHospitalSearchAdapter:
         )
 
         return [
-            HospitalInfo.model_validate(
-                item
-            )
+            HospitalInfo.model_validate(item)
             for item in results
         ]
-
-
-_hospital_provider: (
-    HospitalSearchProvider
-) = DemoHospitalSearchProvider()
-
-
-def get_hospital_search_provider(
-) -> HospitalSearchProvider:
-    return _hospital_provider
-
-
-def set_hospital_search_provider(
-    provider: HospitalSearchProvider,
-) -> None:
-    global _hospital_provider
-    _hospital_provider = provider
 
 
 class EmailProvider(Protocol):
@@ -322,17 +276,12 @@ class EmailProvider(Protocol):
         ...
 
 
-
 class OutboxEmailProvider:
     def __init__(
         self,
-        output_dir: str | Path = (
-            "tmp/outbox"
-        ),
+        output_dir: str | Path = "tmp/outbox",
     ) -> None:
-        self.output_dir = Path(
-            output_dir
-        )
+        self.output_dir = Path(output_dir)
 
     def send(
         self,
@@ -347,19 +296,14 @@ class OutboxEmailProvider:
         )
 
         message_id = uuid.uuid4().hex
-        eml_path = (
-            self.output_dir
-            / f"{message_id}.eml"
-        )
+        eml_path = self.output_dir / f"{message_id}.eml"
         preview_path = (
             self.output_dir
             / f"{message_id}_preview.txt"
         )
 
         message = EmailMessage()
-        message["From"] = (
-            "petcare-local@example.com"
-        )
+        message["From"] = "petcare-local@example.com"
         message["To"] = recipient
         message["Subject"] = subject
         message.set_content(
@@ -367,10 +311,7 @@ class OutboxEmailProvider:
             charset="utf-8",
         )
 
-        eml_path.write_bytes(
-            message.as_bytes()
-        )
-
+        eml_path.write_bytes(message.as_bytes())
         preview_path.write_text(
             "\n".join(
                 [
@@ -389,9 +330,7 @@ class OutboxEmailProvider:
             recipient=recipient,
             message_id=message_id,
             file_path=str(eml_path),
-            preview_path=str(
-                preview_path
-            ),
+            preview_path=str(preview_path),
         )
 
 
@@ -414,60 +353,32 @@ class SMTPEmailProvider:
         self.use_tls = use_tls
 
     @classmethod
-    def from_env(
-        cls,
-    ) -> "SMTPEmailProvider":
+    def from_env(cls) -> "SMTPEmailProvider":
         required = {
-            "SMTP_HOST": os.getenv(
-                "SMTP_HOST"
-            ),
-            "SMTP_USERNAME": os.getenv(
-                "SMTP_USERNAME"
-            ),
-            "SMTP_PASSWORD": os.getenv(
-                "SMTP_PASSWORD"
-            ),
-            "SMTP_SENDER": os.getenv(
-                "SMTP_SENDER"
-            ),
+            "SMTP_HOST": os.getenv("SMTP_HOST"),
+            "SMTP_USERNAME": os.getenv("SMTP_USERNAME"),
+            "SMTP_PASSWORD": os.getenv("SMTP_PASSWORD"),
+            "SMTP_SENDER": os.getenv("SMTP_SENDER"),
         }
 
         missing = [
             name
-            for name, value
-            in required.items()
+            for name, value in required.items()
             if not value
         ]
 
         if missing:
             raise ValueError(
-                "SMTP 환경변수가 "
-                f"필요합니다: {missing}"
+                "SMTP 환경변수가 필요합니다: "
+                f"{missing}"
             )
 
         return cls(
-            host=str(
-                required["SMTP_HOST"]
-            ),
-            port=int(
-                os.getenv(
-                    "SMTP_PORT",
-                    "587",
-                )
-            ),
-            username=str(
-                required[
-                    "SMTP_USERNAME"
-                ]
-            ),
-            password=str(
-                required[
-                    "SMTP_PASSWORD"
-                ]
-            ),
-            sender=str(
-                required["SMTP_SENDER"]
-            ),
+            host=str(required["SMTP_HOST"]),
+            port=int(os.getenv("SMTP_PORT", "587")),
+            username=str(required["SMTP_USERNAME"]),
+            password=str(required["SMTP_PASSWORD"]),
+            sender=str(required["SMTP_SENDER"]),
             use_tls=(
                 os.getenv(
                     "SMTP_USE_TLS",
@@ -507,39 +418,38 @@ class SMTPEmailProvider:
         return EmailDeliveryResult(
             status="sent",
             recipient=recipient,
-            message_id=(
-                message.get(
-                    "Message-ID"
-                )
-            ),
+            message_id=message.get("Message-ID"),
         )
 
 
-_email_provider: EmailProvider | None = (
-    None
-)
-
-
-def get_email_provider() -> EmailProvider:
-    global _email_provider
-
-    if _email_provider is not None:
-        return _email_provider
-
+def build_default_email_provider() -> EmailProvider:
     if os.getenv("SMTP_HOST"):
-        _email_provider = (
-            SMTPEmailProvider.from_env()
-        )
-    else:
-        _email_provider = (
-            OutboxEmailProvider()
-        )
+        return SMTPEmailProvider.from_env()
 
-    return _email_provider
+    return OutboxEmailProvider()
 
 
-def set_email_provider(
-    provider: EmailProvider,
-) -> None:
-    global _email_provider
-    _email_provider = provider
+@dataclass
+class AgentDependencies:
+    """그래프 실행 단위로 주입되는 외부 의존성 모음."""
+
+    llm: LLMService | None = None
+    rag: RAGProvider = field(
+        default_factory=NullRAGProvider
+    )
+    hospital_search: HospitalSearchProvider = field(
+        default_factory=DemoHospitalSearchProvider
+    )
+    email: EmailProvider = field(
+        default_factory=build_default_email_provider
+    )
+
+    def require_llm(self) -> LLMService:
+        if self.llm is None:
+            self.llm = OpenAIService.from_env()
+
+        return self.llm
+
+
+def build_default_dependencies() -> AgentDependencies:
+    return AgentDependencies()

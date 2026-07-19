@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from petcare_agent.documents import (
-    create_handoff_pdf,
-)
-from petcare_agent.prompts import (
-    NON_EMERGENCY_SYSTEM_PROMPT,
-)
+from petcare_agent.documents import create_handoff_pdf
+from petcare_agent.models import HandoffDocument
+from petcare_agent.prompts import NON_EMERGENCY_SYSTEM_PROMPT
 
 
 def test_non_emergency_prompt_sections() -> None:
@@ -15,42 +12,38 @@ def test_non_emergency_prompt_sections() -> None:
     assert "근거라는 제목" in NON_EMERGENCY_SYSTEM_PROMPT
 
 
-def test_structured_pdf(
-    tmp_path: Path,
-) -> None:
+def test_structured_pdf(tmp_path: Path) -> None:
+    handoff = HandoffDocument.model_validate(
+        {
+            "document_info": {
+                "title": "PetCare AI 병원 전달용 상태 요약",
+                "generated_at": "2026.07.19 15:30",
+                "data_period": "2026.06.01 ~ 2026.06.30",
+            },
+            "pet_info": {
+                "name": "보리",
+                "species": "강아지",
+                "breed": "말티즈",
+                "sex_neutered": "암컷 / 중성화 완료",
+                "age": "만 5세",
+                "weight": "4.2kg",
+                "medications": ["점이액"],
+                "allergies": ["닭고기 의심"],
+            },
+            "status": {
+                "classification": "비응급 건강 이상",
+                "risk_signs": [],
+            },
+            "clinical_summary": {
+                "chief_complaints": ["식욕 감소"],
+                "major_changes": ["최근 일주일간 섭취량 감소"],
+                "course": ["평소의 약 70% 섭취"],
+            },
+        }
+    )
+
     path = create_handoff_pdf(
-        handoff={
-            "title": "보리 병원 전달용 상태 요약",
-            "pet_summary": "말티즈, 4.2kg",
-            "chief_complaint": [
-                "구토 1회",
-            ],
-            "onset_and_course": [
-                "오늘 저녁 식후 발생",
-            ],
-            "recent_daily_record_summary": [
-                "전날까지 식욕과 활동 정상",
-            ],
-            "diagnosis_and_medication_history": [
-                "외이염 치료 완료",
-            ],
-            "unknown_items": [
-                "복통 여부 미확인",
-            ],
-            "caution": (
-                "보호자가 내용을 확인한 "
-                "초안입니다."
-            ),
-        },
-        pet={
-            "name": "보리",
-            "species": "dog",
-            "breed": "말티즈",
-            "sex": "female",
-            "is_neutered": True,
-            "birth_date": "2021-03-12",
-            "weight_kg": 4.2,
-        },
+        handoff=handoff,
         session_id="pdf-test",
         output_dir=tmp_path,
     )
