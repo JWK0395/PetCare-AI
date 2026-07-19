@@ -18,7 +18,8 @@
 | --- | --- | --- |
 | `app/` | 모바일 앱 (Android) | React Native 0.86 · React Navigation 7 |
 | `server/` | API 서버 + DB (포트 8000) | FastAPI · SQLAlchemy 2 · SQLite |
-| `ai/` | AI Agent 서비스 | — |
+| `ai/` | AI Agent 서비스 (포트 8100, 선택) | FastAPI · `petcare_ai` 호출 |
+| `jewon-ai/` | RAG + LangGraph 상담 파이프라인 | LangGraph · FAISS · OpenAI · Tavily |
 | `docs/` | 기술 문서 | — |
 
 ## 요구사항
@@ -57,3 +58,10 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 - 에뮬레이터는 자동으로 `http://10.0.2.2:8000`(호스트 PC 서버)에 접속
 - 개발용 핫리로드(`npx react-native run-android`)도 가능 — 환경별 주의사항은 [dev-readme/local-development.md](dev-readme/local-development.md)
 - 로그인 화면에서 데모 계정으로 로그인하면 시드 데이터(콩이)가 보인다
+
+### 3) AI Agent 연결 (선택)
+
+기본값 `AGENT_MODE=mock` — 외부 AI 없이 서버 내장 규칙으로 전체 흐름이 동작한다.
+실제 AI(RAG + LangGraph)를 붙이려면 `ai/` 서비스를 띄우고 `server/.env` 에서
+`AGENT_MODE=http` 로 전환한다. HTTP 계약과 실행 방법은 [ai/README.md](ai/README.md),
+파이프라인 상세는 `jewon-ai/` 를 참고한다.
