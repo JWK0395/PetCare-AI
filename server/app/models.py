@@ -166,7 +166,10 @@ class EmergencyEmail(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     pet_id: Mapped[int] = mapped_column(ForeignKey("pets.id"), index=True)
     hospital_id: Mapped[int | None] = mapped_column(ForeignKey("hospitals.id"), nullable=True)
-    to_email: Mapped[str] = mapped_column(String(100), default="")
+    # 수신 주소를 못 구한 초안은 NULL 이다 — 웹 검색으로 병원 이메일이 나오는 경우는
+    # 드물다. 빈 문자열("")로 두면 "주소가 있다"와 구분되지 않아 앱이 입력을
+    # 요청할 시점을 판단할 수 없다.
+    to_email: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
     subject: Mapped[str] = mapped_column(String(200), default="")
     body: Mapped[str] = mapped_column(Text, default="")
     content: Mapped[dict] = mapped_column(JSON, default=dict)  # 4섹션 요약 구조

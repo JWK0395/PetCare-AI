@@ -14,7 +14,6 @@ os.environ["DATABASE_URL"] = f"sqlite:///{(Path(_tmpdir) / 'test.db').as_posix()
 os.environ["SEED_DEMO_DATA"] = "true"
 os.environ["DEMO_USER_EMAIL"] = "demo@test.local"
 os.environ["DEMO_USER_PASSWORD"] = "demo-test-1234"
-os.environ["DEMO_PASSWORD"] = "demo"
 os.environ["AGENT_MODE"] = "mock"
 # rate limit 테스트가 다른 테스트를 막지 않도록 넉넉하게
 os.environ["AUTH_RATE_LIMIT_ATTEMPTS"] = "50"
