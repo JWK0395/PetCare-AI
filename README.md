@@ -112,15 +112,15 @@ python tools/manage_cornell_rag_db.py query `
 ```
 
 이 명령은 한국어 질문을 영어 Cornell 문서 검색에 맞는 retrieval query로 바꾼 뒤,
-ChromaDB에서 dense 후보를 넓게 가져오고 hybrid rerank가 적용된 최종 top-k를 보여준다.
-순수 dense 검색 결과만 비교하고 싶으면 `--no-hybrid-rerank`를 붙인다.
+ChromaDB dense 검색 결과를 보여준다. 현재 골든 질문 기준에서는 이 설정이 안정 기본값이다.
+실험적으로 hybrid rerank까지 비교하고 싶으면 `--hybrid-rerank`를 붙인다.
 
 ```powershell
 python tools/manage_cornell_rag_db.py query `
   --query "강아지가 초콜릿을 먹으면 왜 위험해?" `
   --species dog `
   --top-k 5 `
-  --no-hybrid-rerank
+  --hybrid-rerank
 ```
 
 한국어 원문 질문을 그대로 검색했을 때와 비교하려면 `--no-query-rewrite`를 붙인다.
@@ -130,13 +130,12 @@ python tools/manage_cornell_rag_db.py query `
   --query "강아지가 초콜릿을 먹으면 왜 위험해?" `
   --species dog `
   --top-k 5 `
-  --no-query-rewrite `
-  --no-hybrid-rerank
+  --no-query-rewrite
 ```
 
 답변 생성과 Cornell 출처까지 포함한 전체 파이프라인은 다음 CLI를 사용한다.
 
-### 2-5. dense 검색 → hybrid rerank → GPT 답변까지 보기
+### 2-5. dense 검색 → GPT 답변까지 보기
 
 ```powershell
 python tools/run_cornell_rag.py `
@@ -156,9 +155,10 @@ python tools/run_cornell_rag.py `
 - Cornell 공식 출처가 붙은 최종 답변
 
 현재 검색 품질 강화는 두 단계다. 먼저 한국어 사용자 질문을 영어 Cornell corpus에 맞는
-검색 질의로 rewrite한다. 그 다음 dense 검색 후보를 더 넓게 가져온 뒤, dense similarity와
-BM25 스타일 lexical score를 섞어 최종 top-k를 다시 정렬하는 deterministic hybrid rerank를
-적용한다.
+검색 질의로 rewrite한다. 골든 질문 기준으로는 이 단계만 적용한 dense 검색이 12/12를
+통과했다. hybrid rerank는 dense 후보를 더 넓게 가져온 뒤 dense similarity와 BM25 스타일
+lexical score를 섞어 최종 top-k를 다시 정렬하는 실험 옵션이며, 현재 측정에서는 11/12로
+dense-only보다 낮아 기본값에서 제외했다.
 
 평가 기준과 발표용 테스트 절차는 `docs/rag-evaluation-criteria.md`에 정리되어 있다.
 핵심은 검색 품질, 출처 품질, 답변 품질, 속도를 분리해서 보는 것이다.
@@ -169,24 +169,32 @@ BM25 스타일 lexical score를 섞어 최종 top-k를 다시 정렬하는 deter
 python tools/manage_cornell_rag_db.py evaluate
 ```
 
-이 평가는 query rewrite 후 dense 후보를 넓게 가져오고 hybrid rerank한 최종 top-k 안에
-골든 질문의 기대 문서가 들어오는지 확인한다. 출력에는 원문 질문, 검색용 retrieval query,
-`Recall@k`, `MRR`, 평균 검색 지연시간이 포함된다.
+이 평가는 query rewrite 후 dense 검색한 최종 top-k 안에 골든 질문의 기대 문서가 들어오는지
+확인한다. 출력에는 원문 질문, 검색용 retrieval query, `Recall@k`, `MRR`, 평균 검색 지연시간이
+포함된다.
 
 발표용 비교는 다음 세 가지를 권장한다.
 
 ```powershell
 python tools/manage_cornell_rag_db.py evaluate --no-query-rewrite --no-hybrid-rerank
 python tools/manage_cornell_rag_db.py evaluate --no-hybrid-rerank
-python tools/manage_cornell_rag_db.py evaluate
+python tools/manage_cornell_rag_db.py evaluate --hybrid-rerank
 ```
 
 첫 번째는 한국어 원문 질문을 그대로 dense 검색한 baseline이고, 두 번째는 영어 query rewrite만
-적용한 dense 검색이며, 세 번째는 query rewrite와 hybrid rerank를 모두 적용한 결과다.
-순수 dense baseline만 빠르게 비교하려면 다음처럼 실행한다.
+적용한 dense 검색이며, 세 번째는 query rewrite와 hybrid rerank를 모두 적용한 실험 결과다.
+현재 측정 결과는 다음과 같다.
+
+| 설정 | Recall@k | MRR | 평균 검색 지연시간 |
+| --- | ---: | ---: | ---: |
+| Korean dense-only | 0.000 | 0.000 | 482ms |
+| Rewrite + dense-only | 1.000 | 0.847 | 1578ms |
+| Rewrite + hybrid-rerank | 0.917 | 0.757 | 1642ms |
+
+안정 기본 평가를 빠르게 실행하려면 다음처럼 실행한다.
 
 ```powershell
-python tools/manage_cornell_rag_db.py evaluate --no-hybrid-rerank
+python tools/manage_cornell_rag_db.py evaluate
 ```
 
 답변 문장 품질을 완전히 보장하는 테스트는 아니며, 검색 설정이 최소 기준을 통과하는지

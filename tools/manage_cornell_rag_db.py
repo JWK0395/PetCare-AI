@@ -775,7 +775,7 @@ def run_query(args: argparse.Namespace) -> None:
         args.species,
         args.top_k,
         query_rewrite=not args.no_query_rewrite,
-        hybrid_rerank=not args.no_hybrid_rerank,
+        hybrid_rerank=args.hybrid_rerank,
         candidate_multiplier=args.candidate_multiplier,
         max_candidates=args.max_candidates,
     )
@@ -844,10 +844,10 @@ def run_evaluate(args: argparse.Namespace) -> None:
     reciprocal_rank_total = 0.0
     total_seconds = 0.0
     rewrite_mode = "query-rewrite" if not args.no_query_rewrite else "original-query"
-    retrieval_mode = "hybrid-rerank" if not args.no_hybrid_rerank else "dense-only"
+    retrieval_mode = "hybrid-rerank" if args.hybrid_rerank else "dense-only"
     mode = f"{rewrite_mode} + {retrieval_mode}"
     print(f"평가 모드: {mode}")
-    if not args.no_hybrid_rerank:
+    if args.hybrid_rerank:
         print(
             "후보 확장: "
             f"candidate_multiplier={args.candidate_multiplier}, max_candidates={args.max_candidates}"
@@ -861,7 +861,7 @@ def run_evaluate(args: argparse.Namespace) -> None:
             case["species"],
             case["top_k"],
             query_rewrite=not args.no_query_rewrite,
-            hybrid_rerank=not args.no_hybrid_rerank,
+            hybrid_rerank=args.hybrid_rerank,
             candidate_multiplier=args.candidate_multiplier,
             max_candidates=args.max_candidates,
         )
@@ -913,10 +913,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--species", choices=("dog", "cat"))
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
+    parser.set_defaults(hybrid_rerank=False)
+    parser.add_argument(
+        "--hybrid-rerank",
+        dest="hybrid_rerank",
+        action="store_true",
+        help="Enable experimental hybrid rerank after dense retrieval.",
+    )
     parser.add_argument(
         "--no-hybrid-rerank",
-        action="store_true",
-        help="Show/evaluate raw dense retrieval results without the lightweight hybrid rerank step.",
+        dest="hybrid_rerank",
+        action="store_false",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--no-query-rewrite",

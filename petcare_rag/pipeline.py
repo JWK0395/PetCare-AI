@@ -27,6 +27,7 @@ GENERATION_MODEL = "gpt-5.4-mini"
 DEFAULT_TOP_K = 5
 DEFAULT_RERANK_CANDIDATE_MULTIPLIER = 3
 DEFAULT_MAX_RERANK_CANDIDATES = 20
+DEFAULT_HYBRID_RERANK_ENABLED = False
 HYBRID_DENSE_WEIGHT = 0.7
 HYBRID_LEXICAL_WEIGHT = 0.3
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
@@ -271,7 +272,7 @@ def retrieve(
     collection: Any | None = None,
     embedding_client: Any | None = None,
     embedder: Embedder | None = None,
-    hybrid_rerank_enabled: bool = True,
+    hybrid_rerank_enabled: bool = DEFAULT_HYBRID_RERANK_ENABLED,
 ) -> list[RetrievedChunk]:
     """Retrieve valid Cornell chunks, then optionally hybrid-rerank candidates."""
 
@@ -594,6 +595,7 @@ def run_pipeline(
     generator: Generator | None = None,
     query_rewriter: QueryRewriter | None = None,
     query_rewrite_enabled: bool = True,
+    hybrid_rerank_enabled: bool = DEFAULT_HYBRID_RERANK_ENABLED,
 ) -> tuple[RagResponse, PipelineTrace]:
     question, species = validate_request(question, species, top_k)
     retrieval_query, query_rewrite_failed = resolve_retrieval_query(
@@ -613,6 +615,7 @@ def run_pipeline(
         collection=collection,
         embedding_client=embedding_client,
         embedder=embedder,
+        hybrid_rerank_enabled=hybrid_rerank_enabled,
     )
     context = build_context(chunks)
     generation_prompt = build_generation_prompt(question, species, context)

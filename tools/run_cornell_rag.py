@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="벡터 값이나 API 키를 제외한 중간 검색·컨텍스트 정보를 표시합니다.",
     )
     parser.add_argument(
+        "--hybrid-rerank",
+        action="store_true",
+        help="dense 후보를 더 넓게 가져온 뒤 BM25 스타일 lexical score로 실험적 rerank를 적용합니다.",
+    )
+    parser.add_argument(
         "--json", action="store_true", help="최종 결과를 JSON으로 출력합니다."
     )
     return parser
@@ -89,6 +94,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             top_k=args.top_k,
             db_path=args.db_path,
             collection_name=args.collection,
+            hybrid_rerank_enabled=args.hybrid_rerank,
         )
         if args.debug:
             print_debug(trace)
