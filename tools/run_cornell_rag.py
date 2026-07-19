@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--db-path", type=Path, default=Path("rag_data/chroma"))
     parser.add_argument(
-        "--collection", default="cornell_pet_health_gemini_embedding_2_768"
+        "--collection", default="cornell_pet_health_text_embedding_3_small_1536"
     )
     parser.add_argument(
         "--debug",
@@ -51,7 +51,7 @@ def print_debug(trace: object) -> None:
             f"document_id={chunk.document_id} chunk_id={chunk.chunk_id}",
             file=sys.stderr,
         )
-    print("\n===== DEBUG: Gemini에 전달되는 SOURCE 컨텍스트 =====", file=sys.stderr)
+    print("\n===== DEBUG: OpenAI에 전달되는 SOURCE 컨텍스트 =====", file=sys.stderr)
     print(trace.context or "(유효한 컨텍스트 없음)", file=sys.stderr)
     print("\n===== DEBUG: 최종 인용 번호 =====", file=sys.stderr)
     print(trace.cited_source_numbers, file=sys.stderr)

@@ -1,4 +1,4 @@
-"""Direct Gemini + Chroma RAG pipeline for Cornell pet health information.
+"""Direct OpenAI + Chroma RAG pipeline for Cornell pet health information.
 
 The module intentionally avoids LangChain. Each RAG step is a small function so
 beginners can inspect retrieval, context construction, generation, and citation
@@ -8,6 +8,7 @@ validation independently.
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any, Callable, Literal, Sequence
@@ -21,8 +22,12 @@ Species = Literal["dog", "cat"]
 Embedder = Callable[[str], Sequence[float]]
 Generator = Callable[[str, str, dict[str, Any]], dict[str, Any] | RagAnswer]
 
-GENERATION_MODEL = "gemini-3.5-flash"
+GENERATION_MODEL = "gpt-5.4-mini"
 DEFAULT_TOP_K = 5
+DEFAULT_RERANK_CANDIDATE_MULTIPLIER = 3
+DEFAULT_MAX_RERANK_CANDIDATES = 20
+HYBRID_DENSE_WEIGHT = 0.7
+HYBRID_LEXICAL_WEIGHT = 0.3
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
 DEFAULT_DISCLAIMER = "일반적인 공식 건강정보이며 진단이나 처방을 대신하지 않습니다."
 INSUFFICIENT_ANSWER = (
@@ -74,14 +79,14 @@ class RagPipelineError(RuntimeError):
         self.diagnostic = diagnostic
 
 
-def _safe_google_diagnostic(exc: BaseException) -> str:
-    """Keep useful Google status text while removing common API-key patterns."""
+def _safe_openai_diagnostic(exc: BaseException) -> str:
+    """Keep useful OpenAI status text while removing common API-key patterns."""
 
     status = rag_db._status_code(exc)
     text = " ".join(str(exc).split())
-    text = re.sub(r"AIza[0-9A-Za-z_-]{10,}", "[REDACTED_API_KEY]", text)
+    text = re.sub(r"sk-[0-9A-Za-z_-]{10,}", "[REDACTED_API_KEY]", text)
     text = re.sub(
-        r"(?i)(x-goog-api-key|api[_ -]?key)(\s*[:=]\s*)([^\s,;}]+)",
+        r"(?i)(authorization|api[_ -]?key)(\s*[:=]\s*)([^\s,;}]+)",
         r"\1\2[REDACTED]",
         text,
     )
@@ -120,7 +125,7 @@ def open_collection(
     if metadata.get("embedding_model") != rag_db.MODEL:
         raise RagPipelineError("DB의 임베딩 모델이 현재 질문 모델과 다릅니다.")
     if metadata.get("embedding_dimension") != rag_db.DIMENSION:
-        raise RagPipelineError("DB의 임베딩 차원이 768차원과 다릅니다.")
+        raise RagPipelineError(f"DB의 임베딩 차원이 {rag_db.DIMENSION}차원과 다릅니다.")
     return collection
 
 
@@ -130,7 +135,7 @@ def embed_question(
     embedding_client: Any | None = None,
     embedder: Embedder | None = None,
 ) -> list[float]:
-    """Turn one question into a 768-dimensional vector."""
+    """Turn one question into a vector compatible with the indexed corpus."""
 
     question = question.strip()
     if not question:
@@ -141,7 +146,7 @@ def embed_question(
             list(embedder(prompt))
             if embedder is not None
             else rag_db.embed_texts(
-                embedding_client or rag_db.google_client(), [prompt]
+                embedding_client or rag_db.openai_client(), [prompt]
             )[0]
         )
         rag_db.validate_embeddings([vector], 1)
@@ -150,6 +155,77 @@ def embed_question(
     except Exception as exc:
         raise RagPipelineError("질문 임베딩 생성에 실패했습니다.") from exc
     return vector
+
+
+def _lexical_terms(text: str) -> list[str]:
+    return re.findall(r"[0-9a-z가-힣]+", text.lower())
+
+
+def _minmax(values: Sequence[float]) -> list[float]:
+    if not values:
+        return []
+    lo = min(values)
+    hi = max(values)
+    if math.isclose(lo, hi):
+        return [1.0 for _ in values]
+    return [(value - lo) / (hi - lo) for value in values]
+
+
+def _bm25_scores(query: str, chunks: Sequence[RetrievedChunk]) -> list[float]:
+    query_terms = _lexical_terms(query)
+    if not query_terms or not chunks:
+        return [0.0 for _ in chunks]
+    documents = [_lexical_terms(chunk.title + " " + chunk.content) for chunk in chunks]
+    average_length = sum(len(document) for document in documents) / max(1, len(documents))
+    document_frequency = {
+        term: sum(1 for document in documents if term in set(document))
+        for term in set(query_terms)
+    }
+    k1 = 1.2
+    b = 0.75
+    scores: list[float] = []
+    for document in documents:
+        length = max(1, len(document))
+        score = 0.0
+        for term in query_terms:
+            frequency = document.count(term)
+            if frequency == 0:
+                continue
+            df = document_frequency.get(term, 0)
+            idf = math.log(1.0 + (len(documents) - df + 0.5) / (df + 0.5))
+            denominator = frequency + k1 * (1.0 - b + b * length / average_length)
+            score += idf * (frequency * (k1 + 1.0)) / denominator
+        scores.append(score)
+    return scores
+
+
+def hybrid_rerank(
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+    top_k: int,
+    *,
+    dense_weight: float = HYBRID_DENSE_WEIGHT,
+    lexical_weight: float = HYBRID_LEXICAL_WEIGHT,
+) -> list[RetrievedChunk]:
+    """Rerank dense candidates with a small BM25-style lexical signal."""
+
+    if top_k < 1:
+        raise RagPipelineError("top-k는 1 이상이어야 합니다.")
+    if not chunks:
+        return []
+    dense_scores = _minmax([chunk.similarity for chunk in chunks])
+    lexical_scores = _minmax(_bm25_scores(question, chunks))
+    scored = [
+        (
+            dense_weight * dense_scores[index]
+            + lexical_weight * lexical_scores[index],
+            -index,
+            chunk,
+        )
+        for index, chunk in enumerate(chunks)
+    ]
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [chunk for _, _, chunk in scored[:top_k]]
 
 
 def retrieve(
@@ -162,8 +238,9 @@ def retrieve(
     collection: Any | None = None,
     embedding_client: Any | None = None,
     embedder: Embedder | None = None,
+    hybrid_rerank_enabled: bool = True,
 ) -> list[RetrievedChunk]:
-    """Retrieve valid Cornell chunks after applying the mandatory species filter."""
+    """Retrieve valid Cornell chunks, then optionally hybrid-rerank candidates."""
 
     question, species = validate_request(question, species, top_k)
     collection = collection or open_collection(db_path, collection_name)
@@ -171,7 +248,15 @@ def retrieve(
         question, embedding_client=embedding_client, embedder=embedder
     )
     try:
-        raw_results = rag_db.query_collection(collection, vector, species, top_k)
+        candidate_k = (
+            min(
+                DEFAULT_MAX_RERANK_CANDIDATES,
+                max(top_k, top_k * DEFAULT_RERANK_CANDIDATE_MULTIPLIER),
+            )
+            if hybrid_rerank_enabled
+            else top_k
+        )
+        raw_results = rag_db.query_collection(collection, vector, species, candidate_k)
     except rag_db.RagDbError as exc:
         raise RagPipelineError(str(exc)) from exc
     except Exception as exc:
@@ -201,11 +286,13 @@ def retrieve(
                 distance=result.distance,
             )
         )
-    return chunks
+    if hybrid_rerank_enabled:
+        return hybrid_rerank(question, chunks, top_k)
+    return chunks[:top_k]
 
 
 def build_context(chunks: Sequence[RetrievedChunk]) -> str:
-    """Number retrieved chunks so Gemini can cite only known SOURCE IDs."""
+    """Number retrieved chunks so the model can cite only known SOURCE IDs."""
 
     blocks = []
     for number, chunk in enumerate(chunks, start=1):
@@ -261,7 +348,7 @@ def _decode_json_object(text: str) -> dict[str, Any]:
             if isinstance(payload, dict):
                 return payload
     raise RagPipelineError(
-        "Gemini 답변이 약속된 JSON 형식이 아닙니다.",
+        "모델 답변이 약속된 JSON 형식이 아닙니다.",
         diagnostic=f"응답 앞부분: {_redacted_preview(text)}",
     )
 
@@ -274,7 +361,14 @@ def _payload_from_response(response: Any) -> dict[str, Any]:
         return parsed.model_dump()
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
-        raise RagPipelineError("Gemini가 비어 있는 답변을 반환했습니다.")
+        text = getattr(response, "output_text", None)
+    if not isinstance(text, str) or not text.strip():
+        choices = getattr(response, "choices", None) or []
+        if choices:
+            message = getattr(choices[0], "message", None)
+            text = getattr(message, "content", None)
+    if not isinstance(text, str) or not text.strip():
+        raise RagPipelineError("모델이 비어 있는 답변을 반환했습니다.")
     try:
         return _decode_json_object(text)
     except RagPipelineError as exc:
@@ -305,16 +399,16 @@ def validate_generated_answer(
     elif isinstance(payload, dict):
         raw = payload
     else:
-        raise RagPipelineError("Gemini 답변 형식이 올바르지 않습니다.")
+        raise RagPipelineError("모델 답변 형식이 올바르지 않습니다.")
 
     answer = raw.get("answer")
     cited = raw.get("cited_source_numbers")
     insufficient = raw.get("insufficient_evidence")
     disclaimer = raw.get("disclaimer")
     if not isinstance(answer, str) or not isinstance(cited, list):
-        raise RagPipelineError("Gemini 답변의 answer 또는 인용 배열이 올바르지 않습니다.")
+        raise RagPipelineError("모델 답변의 answer 또는 인용 배열이 올바르지 않습니다.")
     if not isinstance(insufficient, bool) or not isinstance(disclaimer, str):
-        raise RagPipelineError("Gemini 답변의 근거 부족 또는 안내문 형식이 올바르지 않습니다.")
+        raise RagPipelineError("모델 답변의 근거 부족 또는 안내문 형식이 올바르지 않습니다.")
     if any(isinstance(number, bool) or not isinstance(number, int) for number in cited):
         raise RagPipelineError("인용 번호는 정수여야 합니다.")
 
@@ -330,7 +424,7 @@ def validate_generated_answer(
     if not answer:
         raise RagPipelineError("근거가 충분하다고 표시했지만 답변이 비어 있습니다.")
     if re.search(r"https?://", answer, flags=re.IGNORECASE):
-        raise RagPipelineError("Gemini 답변 본문에 임의 URL이 포함되어 차단했습니다.")
+        raise RagPipelineError("모델 답변 본문에 임의 URL이 포함되어 차단했습니다.")
     invalid_declared = [number for number in cited if not 1 <= number <= source_count]
     if invalid_declared:
         raise RagPipelineError(
@@ -346,8 +440,8 @@ def validate_generated_answer(
         raise RagPipelineError(
             f"답변 본문이 존재하지 않는 SOURCE 번호를 인용했습니다: {invalid_markers}"
         )
-    # The visible inline markers are the source of truth. Gemini occasionally
-    # omits or duplicates the parallel JSON array even when its answer markers
+    # The visible inline markers are the source of truth. Models occasionally
+    # omit or duplicate the parallel JSON array even when their answer markers
     # are valid. Preserve first-appearance order and derive citations from it.
     normalized_citations = list(dict.fromkeys(marker_sequence))
     return RagAnswer(
@@ -366,7 +460,7 @@ def generate_answer(
     generation_client: Any | None = None,
     generator: Generator | None = None,
 ) -> RagAnswer:
-    """Generate a structured answer, or stop before Gemini when evidence is empty."""
+    """Generate a structured answer, or stop before OpenAI when evidence is empty."""
 
     question, species = validate_request(question, species, DEFAULT_TOP_K)
     if not chunks:
@@ -383,31 +477,26 @@ def generate_answer(
             generator(SYSTEM_INSTRUCTION, prompt, RAG_ANSWER_SCHEMA), len(chunks)
         )
 
-    try:
-        from google.genai import types
-    except ImportError as exc:
-        raise RagPipelineError(
-            "google-genai가 설치되지 않았습니다. requirements-rag.txt를 설치하세요."
-        ) from exc
-
     client = generation_client
     if client is None:
         try:
-            client = rag_db.google_client()
+            client = rag_db.openai_client()
         except rag_db.RagDbError as exc:
             raise RagPipelineError(str(exc)) from exc
 
     def request() -> Any:
-        return client.models.generate_content(
+        return client.responses.create(
             model=GENERATION_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
-                thinking_config=types.ThinkingConfig(thinking_level="low"),
-                response_mime_type="application/json",
-                response_schema=RAG_ANSWER_SCHEMA,
-            ),
+            instructions=SYSTEM_INSTRUCTION,
+            input=prompt,
+            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "rag_answer",
+                    "schema": RAG_ANSWER_SCHEMA,
+                }
+            },
         )
 
     try:
@@ -419,12 +508,12 @@ def generate_answer(
     except Exception as exc:
         if rag_db.is_retryable(exc):
             raise RagPipelineError(
-                "Google 답변 생성이 일시적으로 실패했습니다. 잠시 후 다시 시도하세요.",
-                diagnostic=_safe_google_diagnostic(exc),
+                "OpenAI 답변 생성이 일시적으로 실패했습니다. 잠시 후 다시 시도하세요.",
+                diagnostic=_safe_openai_diagnostic(exc),
             ) from exc
         raise RagPipelineError(
-            "Google 답변 생성에 실패했습니다.",
-            diagnostic=_safe_google_diagnostic(exc),
+            "OpenAI 답변 생성에 실패했습니다.",
+            diagnostic=_safe_openai_diagnostic(exc),
         ) from exc
 
 

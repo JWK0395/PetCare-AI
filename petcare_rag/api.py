@@ -93,10 +93,10 @@ def check_readiness(
     db_path: Path = rag_db.DEFAULT_DB_PATH,
     collection_name: str = rag_db.DEFAULT_COLLECTION,
 ) -> Readiness:
-    """Check local configuration without spending a Google API request."""
+    """Check local configuration without spending an OpenAI API request."""
 
     checks = {
-        "google_api_key_configured": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+        "openai_api_key_configured": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
         "service_token_configured": bool(
             os.environ.get("PETCARE_RAG_SERVICE_TOKEN", "").strip()
         ),

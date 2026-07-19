@@ -1,14 +1,15 @@
 # PetCare AI — Cornell 공식자료 RAG
 
 이 저장소의 현재 실행 가능한 기능은 Cornell University College of Veterinary Medicine의
-개·고양이 건강자료를 검색하고, Gemini가 검색된 근거만 사용해 한국어 답변과 출처를
+개·고양이 건강자료를 검색하고, OpenAI 모델이 검색된 근거만 사용해 한국어 답변과 출처를
 반환하는 RAG 파이프라인이다.
 
 새로운 AI 모델을 학습한 것이 아니다. 각 부품의 관계는 다음과 같다.
 
 ```text
-Cornell JSONL → Google 질문 임베딩 → ChromaDB 검색
-              → Gemini 답변 생성 → Cornell 출처가 포함된 응답
+Cornell JSONL → OpenAI 질문 임베딩 → ChromaDB dense 검색
+              → hybrid rerank → gpt-5.4-mini 답변 생성
+              → Cornell 출처가 포함된 응답
 ```
 
 ## 파일을 지도처럼 보기
@@ -43,7 +44,7 @@ python -m unittest discover -s tests -v
 삭제하고 위 명령으로 현재 프로젝트 폴더에서 다시 만든다. `.venv` 자체는 팀원에게
 전달하지 않는다.
 
-API 없이 실행되는 단위 테스트는 Google 키가 없어도 통과해야 한다. corpus와 DB를
+API 없이 실행되는 단위 테스트는 OpenAI 키가 없어도 통과해야 한다. corpus와 DB를
 직접 다루는 자세한 순서는 [rag_data/README.md](rag_data/README.md)를 참고한다.
 
 ## 2. RAG 담당자가 공용 서버 준비하기
@@ -52,7 +53,7 @@ API 없이 실행되는 단위 테스트는 Google 키가 없어도 통과해야
 배포 환경의 Secret 설정에만 저장한다.
 
 ```powershell
-$env:GEMINI_API_KEY="Google_AI_Studio_키"
+$env:OPENAI_API_KEY="OpenAI_API_키"
 $env:PETCARE_RAG_SERVICE_TOKEN="팀_서비스용_긴_임의_문자열"
 ```
 
@@ -65,7 +66,7 @@ python tools/manage_cornell_rag_db.py inspect
 python tools/manage_cornell_rag_db.py evaluate
 ```
 
-정상 기준은 732개 청크, 768차원, 골든 질문 12개 top-5 통과다. ChromaDB는 약 19MB의
+정상 기준은 732개 청크, 1536차원, 골든 질문 12개 top-5 통과다. ChromaDB는
 재생 가능한 색인이므로 Git에 올리지 않는다.
 
 ## 3. 공용 HTTP API 실행하기
@@ -108,7 +109,7 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-팀원은 Google API 키가 아니라 `X-PetCare-Token`만 사용한다. 이 토큰도 프론트엔드
+팀원은 OpenAI API 키가 아니라 `X-PetCare-Token`만 사용한다. 이 토큰도 프론트엔드
 소스에 하드코딩하지 않고 팀 백엔드의 Secret으로 관리한다. 브라우저 앱이 RAG 서버를
 직접 호출하지 않고 팀 백엔드를 거쳐 호출하는 구조를 사용한다.
 

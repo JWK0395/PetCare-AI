@@ -1,5 +1,5 @@
 tiktoken==0.13.0
-google-genai==2.10.0
+openai==2.20.0
 chromadb==1.5.9
 fastapi==0.139.0
 uvicorn==0.51.0

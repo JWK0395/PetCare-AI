@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and inspect a local ChromaDB index for the Cornell pet corpus.
 
-Google Gemini creates embeddings. ChromaDB only stores and searches the
+OpenAI creates embeddings. ChromaDB only stores and searches the
 explicit embeddings passed to it; Chroma's default embedding function is never
 used. The module keeps third-party imports lazy so corpus validation and unit
 tests can run before optional RAG dependencies are installed.
@@ -22,10 +22,10 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
 
-MODEL = "gemini-embedding-2"
-DIMENSION = 768
+MODEL = "text-embedding-3-small"
+DIMENSION = 1536
 EXPECTED_CHUNKS = 732
-DEFAULT_COLLECTION = "cornell_pet_health_gemini_embedding_2_768"
+DEFAULT_COLLECTION = "cornell_pet_health_text_embedding_3_small_1536"
 DEFAULT_INPUT = Path("rag_data/chunks/cornell_pet_health_chunks.jsonl")
 DEFAULT_DB_PATH = Path("rag_data/chroma")
 DEFAULT_GOLD = Path("rag_data/evaluation/cornell_retrieval_gold.jsonl")
@@ -189,7 +189,7 @@ def chroma_metadata(row: dict[str, Any]) -> dict[str, Any]:
 def validate_embeddings(embeddings: Sequence[Sequence[float]], expected: int) -> None:
     if len(embeddings) != expected:
         raise RagDbError(
-            f"Google이 {expected}개 대신 {len(embeddings)}개의 임베딩을 반환했습니다."
+            f"OpenAI가 {expected}개 대신 {len(embeddings)}개의 임베딩을 반환했습니다."
         )
     for position, embedding in enumerate(embeddings, start=1):
         if len(embedding) != DIMENSION:
@@ -259,39 +259,32 @@ def call_with_retry(
             sleep(delay)
 
 
-def google_client() -> Any:
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+def openai_client() -> Any:
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RagDbError(
-            "GEMINI_API_KEY가 설정되지 않았습니다. PowerShell에서 "
-            "$env:GEMINI_API_KEY=\"발급받은_키\"를 실행하세요."
+            "OPENAI_API_KEY가 설정되지 않았습니다. PowerShell에서 "
+            "$env:OPENAI_API_KEY=\"발급받은_키\"를 실행하세요."
         )
     try:
-        from google import genai
+        from openai import OpenAI
     except ImportError as exc:
         raise RagDbError(
-            "google-genai가 설치되지 않았습니다. "
+            "openai 패키지가 설치되지 않았습니다. "
             "python -m pip install -r requirements-rag.txt 를 실행하세요."
         ) from exc
-    return genai.Client(api_key=api_key)
+    return OpenAI(api_key=api_key)
 
 
 def embed_texts(client: Any, texts: Sequence[str]) -> list[list[float]]:
     if not texts:
         return []
-    try:
-        from google.genai import types
-    except ImportError as exc:
-        raise RagDbError("google-genai 패키지를 불러올 수 없습니다.") from exc
-    contents = [
-        types.Content(parts=[types.Part.from_text(text=text)]) for text in texts
-    ]
 
     def request() -> Any:
-        return client.models.embed_content(
+        return client.embeddings.create(
             model=MODEL,
-            contents=contents,
-            config=types.EmbedContentConfig(output_dimensionality=DIMENSION),
+            input=list(texts),
+            dimensions=DIMENSION,
         )
 
     try:
@@ -303,11 +296,11 @@ def embed_texts(client: Any, texts: Sequence[str]) -> list[list[float]]:
             ),
         )
     except Exception as exc:
-        raise RagDbError(f"Google 임베딩 요청에 실패했습니다: {exc}") from exc
-    objects = getattr(response, "embeddings", None)
+        raise RagDbError(f"OpenAI 임베딩 요청에 실패했습니다: {exc}") from exc
+    objects = getattr(response, "data", None)
     if objects is None:
-        raise RagDbError("Google 응답에 embeddings 필드가 없습니다.")
-    embeddings = [list(item.values) for item in objects]
+        raise RagDbError("OpenAI 응답에 data 필드가 없습니다.")
+    embeddings = [list(item.embedding) for item in objects]
     validate_embeddings(embeddings, len(texts))
     return embeddings
 
@@ -413,9 +406,9 @@ def run_check(args: argparse.Namespace) -> None:
     except OSError as exc:
         raise RagDbError(f"DB 경로에 쓸 수 없습니다: {args.db_path}: {exc}") from exc
     print(f"[3/4] DB 경로 쓰기 가능: {args.db_path}")
-    client = google_client()
+    client = openai_client()
     embedding = embed_texts(client, [query_embedding_text("반려동물 건강 정보")])[0]
-    print(f"[4/4] Google API 연결 성공: {MODEL}, {len(embedding)}차원")
+    print(f"[4/4] OpenAI API 연결 성공: {MODEL}, {len(embedding)}차원")
     print("사전 검사가 모두 끝났습니다. 이제 index 명령을 실행할 수 있습니다.")
 
 
@@ -427,11 +420,11 @@ def run_index(args: argparse.Namespace) -> None:
     todo = pending_rows(corpus.rows, known)
     print(f"입력 {len(corpus.rows)}개 / 이미 완료 {len(corpus.rows) - len(todo)}개 / 처리할 청크 {len(todo)}개")
     if todo:
-        gemini = google_client()
+        openai = openai_client()
         completed = len(corpus.rows) - len(todo)
         for batch in batched(todo, args.batch_size):
             embeddings = embed_texts(
-                gemini, [document_embedding_text(row) for row in batch]
+                openai, [document_embedding_text(row) for row in batch]
             )
             collection.upsert(
                 ids=[row["chunk_id"] for row in batch],
@@ -541,7 +534,7 @@ def run_query(args: argparse.Namespace) -> None:
     metadata = collection.metadata or {}
     if metadata.get("embedding_model") != MODEL or metadata.get("embedding_dimension") != DIMENSION:
         raise RagDbError("컬렉션의 임베딩 모델 또는 차원이 현재 검색 설정과 다릅니다.")
-    results = search(google_client(), collection, args.query, args.species, args.top_k)
+    results = search(openai_client(), collection, args.query, args.species, args.top_k)
     print_results(results)
 
 
@@ -590,11 +583,11 @@ def run_evaluate(args: argparse.Namespace) -> None:
     cases = load_jsonl(args.gold)
     validate_gold_cases(cases)
     collection = require_collection(chroma_client(args.db_path), args.collection)
-    gemini = google_client()
+    openai = openai_client()
     passed = 0
     for case in cases:
         results = search(
-            gemini,
+            openai,
             collection,
             case["query"],
             case["species"],
@@ -619,7 +612,7 @@ def run_evaluate(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Google Gemini 임베딩과 로컬 ChromaDB로 Cornell RAG 색인을 관리합니다."
+        description="OpenAI 임베딩과 로컬 ChromaDB로 Cornell RAG 색인을 관리합니다."
     )
     parser.add_argument("command", choices=("check", "index", "inspect", "query", "evaluate"))
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)

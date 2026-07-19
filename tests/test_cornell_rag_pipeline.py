@@ -25,12 +25,13 @@ from petcare_rag.pipeline import (  # noqa: E402
     GENERATION_MODEL,
     RAG_ANSWER_SCHEMA,
     _decode_json_object,
-    _safe_google_diagnostic,
+    _safe_openai_diagnostic,
+    hybrid_rerank,
     validate_generated_answer,
 )
 
 
-VECTOR = [0.1] * 768
+VECTOR = [0.1] * 1536
 
 
 def chunk(number: int = 1, species: str = "dog") -> RetrievedChunk:
@@ -175,8 +176,8 @@ class GenerationValidationTests(unittest.TestCase):
         self.assertNotIn("additionalProperties", RAG_ANSWER_SCHEMA)
         self.assertNotIn("additional_properties", RAG_ANSWER_SCHEMA)
 
-    def test_generation_uses_current_stable_free_tier_model(self) -> None:
-        self.assertEqual(GENERATION_MODEL, "gemini-3.5-flash")
+    def test_generation_uses_openai_mini_model(self) -> None:
+        self.assertEqual(GENERATION_MODEL, "gpt-5.4-mini")
         self.assertEqual(DEFAULT_MAX_OUTPUT_TOKENS, 4096)
 
     def test_empty_evidence_does_not_call_generator(self) -> None:
@@ -240,17 +241,17 @@ class GenerationValidationTests(unittest.TestCase):
         self.assertNotIn("speculative", result.answer)
         self.assertEqual(result.cited_source_numbers, [])
 
-    def test_google_diagnostic_redacts_api_key(self) -> None:
-        class GoogleError(Exception):
+    def test_openai_diagnostic_redacts_api_key(self) -> None:
+        class OpenAIError(Exception):
             status_code = 400
 
-        secret = "test-api-key-secret-value"
-        diagnostic = _safe_google_diagnostic(
-            GoogleError(f"invalid x-goog-api-key={secret}")
+        secret = "sk-test-api-key-secret-value"
+        diagnostic = _safe_openai_diagnostic(
+            OpenAIError(f"invalid Authorization: Bearer {secret}")
         )
         self.assertIn("HTTP 400", diagnostic)
         self.assertNotIn(secret, diagnostic)
-        self.assertIn("[REDACTED]", diagnostic)
+        self.assertIn("[REDACTED", diagnostic)
 
     def test_fenced_json_response_is_parsed(self) -> None:
         payload = _decode_json_object(
@@ -274,6 +275,36 @@ class GenerationValidationTests(unittest.TestCase):
 
 
 class WholePipelineTests(unittest.TestCase):
+    def test_hybrid_rerank_promotes_lexically_relevant_candidate(self) -> None:
+        dense_first = RetrievedChunk(
+            chunk_id="dense",
+            document_id="dense-doc",
+            title="General health",
+            section_path=["General health"],
+            species=["dog"],
+            canonical_url="https://www.vet.cornell.edu/dense",
+            content="General wellness advice for pets.",
+            distance=0.01,
+        )
+        lexical_match = RetrievedChunk(
+            chunk_id="kidney",
+            document_id="kidney-doc",
+            title="Kidney disease",
+            section_path=["Kidney disease"],
+            species=["dog"],
+            canonical_url="https://www.vet.cornell.edu/kidney",
+            content="Dogs with kidney disease need veterinary guidance.",
+            distance=0.2,
+        )
+        reranked = hybrid_rerank(
+            "dog kidney disease guidance",
+            [dense_first, lexical_match],
+            top_k=1,
+            dense_weight=0.2,
+            lexical_weight=0.8,
+        )
+        self.assertEqual(reranked[0].chunk_id, "kidney")
+
     def test_answer_question_returns_only_retrieved_citation_metadata(self) -> None:
         result = answer_question(
             "강아지 일반 건강 질문",
@@ -309,11 +340,11 @@ class WholePipelineTests(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    os.environ.get("GEMINI_API_KEY") and os.environ.get("RUN_RAG_INTEGRATION") == "1",
-    "GEMINI_API_KEY와 RUN_RAG_INTEGRATION=1일 때만 실제 RAG API를 호출합니다.",
+    os.environ.get("OPENAI_API_KEY") and os.environ.get("RUN_RAG_INTEGRATION") == "1",
+    "OPENAI_API_KEY와 RUN_RAG_INTEGRATION=1일 때만 실제 RAG API를 호출합니다.",
 )
-class GooglePipelineIntegrationTests(unittest.TestCase):
-    def test_real_chroma_and_gemini_pipeline_returns_cornell_citation(self) -> None:
+class OpenAIPipelineIntegrationTests(unittest.TestCase):
+    def test_real_chroma_and_openai_pipeline_returns_cornell_citation(self) -> None:
         result = answer_question(
             "강아지가 초콜릿을 먹으면 왜 위험한가?",
             "dog",

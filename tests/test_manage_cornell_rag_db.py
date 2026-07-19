@@ -224,12 +224,12 @@ class EvaluationTests(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    os.environ.get("GEMINI_API_KEY") and os.environ.get("RUN_RAG_INTEGRATION") == "1",
-    "GEMINI_API_KEY와 RUN_RAG_INTEGRATION=1일 때만 실제 Google API를 호출합니다.",
+    os.environ.get("OPENAI_API_KEY") and os.environ.get("RUN_RAG_INTEGRATION") == "1",
+    "OPENAI_API_KEY와 RUN_RAG_INTEGRATION=1일 때만 실제 OpenAI API를 호출합니다.",
 )
-class GoogleApiIntegrationTests(unittest.TestCase):
-    def test_real_google_embedding_is_768_dimensions(self) -> None:
-        client = rag.google_client()
+class OpenAIApiIntegrationTests(unittest.TestCase):
+    def test_real_openai_embedding_has_expected_dimensions(self) -> None:
+        client = rag.openai_client()
         embeddings = rag.embed_texts(
             client,
             [
