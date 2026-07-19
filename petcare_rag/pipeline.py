@@ -53,6 +53,7 @@ SYSTEM_INSTRUCTION = """당신은 Cornell University College of Veterinary Medic
 
 RAG_ANSWER_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "answer": {"type": "string"},
         "cited_source_numbers": {

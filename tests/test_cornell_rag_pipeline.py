@@ -172,8 +172,8 @@ class GenerationValidationTests(unittest.TestCase):
             "disclaimer": "model-created text",
         }
 
-    def test_generate_content_schema_omits_unsupported_additional_properties(self) -> None:
-        self.assertNotIn("additionalProperties", RAG_ANSWER_SCHEMA)
+    def test_openai_response_schema_disallows_additional_properties(self) -> None:
+        self.assertIs(RAG_ANSWER_SCHEMA["additionalProperties"], False)
         self.assertNotIn("additional_properties", RAG_ANSWER_SCHEMA)
 
     def test_generation_uses_openai_mini_model(self) -> None:
