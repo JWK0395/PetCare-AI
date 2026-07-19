@@ -111,15 +111,26 @@ python tools/manage_cornell_rag_db.py query `
   --top-k 5
 ```
 
-이 명령은 ChromaDB에서 dense 후보를 넓게 가져온 뒤, 기본적으로 hybrid rerank가 적용된
-최종 top-k를 보여준다. 순수 dense 검색 결과만 비교하고 싶으면 `--no-hybrid-rerank`를
-붙인다.
+이 명령은 한국어 질문을 영어 Cornell 문서 검색에 맞는 retrieval query로 바꾼 뒤,
+ChromaDB에서 dense 후보를 넓게 가져오고 hybrid rerank가 적용된 최종 top-k를 보여준다.
+순수 dense 검색 결과만 비교하고 싶으면 `--no-hybrid-rerank`를 붙인다.
 
 ```powershell
 python tools/manage_cornell_rag_db.py query `
   --query "강아지가 초콜릿을 먹으면 왜 위험해?" `
   --species dog `
   --top-k 5 `
+  --no-hybrid-rerank
+```
+
+한국어 원문 질문을 그대로 검색했을 때와 비교하려면 `--no-query-rewrite`를 붙인다.
+
+```powershell
+python tools/manage_cornell_rag_db.py query `
+  --query "강아지가 초콜릿을 먹으면 왜 위험해?" `
+  --species dog `
+  --top-k 5 `
+  --no-query-rewrite `
   --no-hybrid-rerank
 ```
 
@@ -138,14 +149,16 @@ python tools/run_cornell_rag.py `
 `--debug`를 붙이면 다음 정보를 함께 볼 수 있다.
 
 - 질문 임베딩 프롬프트
+- 원문 질문과 검색용 영어 retrieval query
 - 검색된 chunk 순위
 - OpenAI에 전달되는 SOURCE context
 - 최종 인용 번호
 - Cornell 공식 출처가 붙은 최종 답변
 
-현재 품질 강화는 별도 외부 reranker 모델을 호출하지 않는다. dense 검색 후보를 더 넓게
-가져온 뒤, dense similarity와 BM25 스타일 lexical score를 섞어 최종 top-k를 다시
-정렬하는 deterministic hybrid rerank 방식이다.
+현재 검색 품질 강화는 두 단계다. 먼저 한국어 사용자 질문을 영어 Cornell corpus에 맞는
+검색 질의로 rewrite한다. 그 다음 dense 검색 후보를 더 넓게 가져온 뒤, dense similarity와
+BM25 스타일 lexical score를 섞어 최종 top-k를 다시 정렬하는 deterministic hybrid rerank를
+적용한다.
 
 평가 기준과 발표용 테스트 절차는 `docs/rag-evaluation-criteria.md`에 정리되어 있다.
 핵심은 검색 품질, 출처 품질, 답변 품질, 속도를 분리해서 보는 것이다.
@@ -156,9 +169,21 @@ python tools/run_cornell_rag.py `
 python tools/manage_cornell_rag_db.py evaluate
 ```
 
-이 평가는 dense 후보를 넓게 가져온 뒤 hybrid rerank한 최종 top-k 안에 골든 질문의 기대
-문서가 들어오는지 확인한다. 출력에는 `Recall@k`, `MRR`, 평균 검색 지연시간이 포함된다.
-순수 dense baseline과 비교하려면 다음처럼 실행한다.
+이 평가는 query rewrite 후 dense 후보를 넓게 가져오고 hybrid rerank한 최종 top-k 안에
+골든 질문의 기대 문서가 들어오는지 확인한다. 출력에는 원문 질문, 검색용 retrieval query,
+`Recall@k`, `MRR`, 평균 검색 지연시간이 포함된다.
+
+발표용 비교는 다음 세 가지를 권장한다.
+
+```powershell
+python tools/manage_cornell_rag_db.py evaluate --no-query-rewrite --no-hybrid-rerank
+python tools/manage_cornell_rag_db.py evaluate --no-hybrid-rerank
+python tools/manage_cornell_rag_db.py evaluate
+```
+
+첫 번째는 한국어 원문 질문을 그대로 dense 검색한 baseline이고, 두 번째는 영어 query rewrite만
+적용한 dense 검색이며, 세 번째는 query rewrite와 hybrid rerank를 모두 적용한 결과다.
+순수 dense baseline만 빠르게 비교하려면 다음처럼 실행한다.
 
 ```powershell
 python tools/manage_cornell_rag_db.py evaluate --no-hybrid-rerank

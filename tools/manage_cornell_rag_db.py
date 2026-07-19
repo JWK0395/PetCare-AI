@@ -24,6 +24,7 @@ from typing import Any, Callable, Iterable, Sequence
 
 
 MODEL = "text-embedding-3-small"
+QUERY_REWRITE_MODEL = "gpt-5.4-mini"
 DIMENSION = 1536
 EXPECTED_CHUNKS = 732
 DEFAULT_COLLECTION = "cornell_pet_health_text_embedding_3_small_1536"
@@ -35,6 +36,15 @@ DEFAULT_MAX_RERANK_CANDIDATES = 20
 HYBRID_DENSE_WEIGHT = 0.7
 HYBRID_LEXICAL_WEIGHT = 0.3
 TOKEN_RE = re.compile(r"[a-z0-9가-힣]+")
+QUERY_REWRITE_INSTRUCTION = """You rewrite pet-health questions for retrieval.
+
+Return one short English search query for Cornell veterinary health articles.
+Do not answer the question.
+Do not give medical advice.
+Keep important animal species, disease, toxin, symptom, diagnosis, prevention, and emergency terms.
+Return plain text only.
+"""
+QUERY_REWRITE_CACHE: dict[tuple[str, str], str] = {}
 REQUIRED_FIELDS = {
     "chunk_id",
     "document_id",
@@ -88,6 +98,13 @@ class SearchResult:
     @property
     def similarity(self) -> float:
         return 1.0 - self.distance
+
+
+@dataclass(frozen=True)
+class SearchRun:
+    retrieval_query: str
+    rewrite_failed: bool
+    results: list[SearchResult]
 
 
 def sha256_file(path: Path) -> str:
@@ -309,6 +326,62 @@ def embed_texts(client: Any, texts: Sequence[str]) -> list[list[float]]:
     embeddings = [list(item.embedding) for item in objects]
     validate_embeddings(embeddings, len(texts))
     return embeddings
+
+
+def _response_text(response: Any) -> str:
+    text = getattr(response, "output_text", None)
+    if isinstance(text, str) and text.strip():
+        return text
+    text = getattr(response, "text", None)
+    if isinstance(text, str) and text.strip():
+        return text
+    choices = getattr(response, "choices", None) or []
+    if choices:
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and content.strip():
+            return content
+    raise RagDbError("OpenAI query rewrite가 빈 응답을 반환했습니다.")
+
+
+def sanitize_retrieval_query(text: str) -> str:
+    query = text.strip()
+    query = re.sub(r"^```(?:text)?\s*", "", query, flags=re.IGNORECASE)
+    query = re.sub(r"\s*```$", "", query)
+    query = " ".join(query.split())
+    query = re.sub(r"^(retrieval query|query|english query)\s*:\s*", "", query, flags=re.IGNORECASE)
+    query = query.strip(" \"'`")
+    if not query:
+        raise RagDbError("OpenAI query rewrite가 빈 검색 질의를 반환했습니다.")
+    return query[:240]
+
+
+def rewrite_retrieval_query(client: Any, question: str, species: str) -> str:
+    question = question.strip()
+    if not question:
+        raise RagDbError("검색 질의로 바꿀 질문이 비어 있습니다.")
+    if species not in {"dog", "cat"}:
+        raise RagDbError("species는 dog 또는 cat이어야 합니다.")
+    cache_key = (species, question)
+    if cache_key in QUERY_REWRITE_CACHE:
+        return QUERY_REWRITE_CACHE[cache_key]
+
+    def request() -> Any:
+        return client.responses.create(
+            model=QUERY_REWRITE_MODEL,
+            instructions=QUERY_REWRITE_INSTRUCTION,
+            input=(
+                f"Animal species: {species}\n"
+                f"User question in Korean or English: {question}\n\n"
+                "Rewrite as one English retrieval query."
+            ),
+            max_output_tokens=80,
+        )
+
+    response = call_with_retry(request)
+    retrieval_query = sanitize_retrieval_query(_response_text(response))
+    QUERY_REWRITE_CACHE[cache_key] = retrieval_query
+    return retrieval_query
 
 
 def chroma_client(db_path: Path) -> Any:
@@ -613,7 +686,53 @@ def search(
     candidate_multiplier: int = DEFAULT_RERANK_CANDIDATE_MULTIPLIER,
     max_candidates: int = DEFAULT_MAX_RERANK_CANDIDATES,
 ) -> list[SearchResult]:
-    embedding = embed_texts(client, [query_embedding_text(query)])[0]
+    return run_search(
+        client,
+        collection,
+        query,
+        species,
+        top_k,
+        query_rewrite=False,
+        hybrid_rerank=hybrid_rerank,
+        candidate_multiplier=candidate_multiplier,
+        max_candidates=max_candidates,
+    ).results
+
+
+def run_search(
+    client: Any,
+    collection: Any,
+    query: str,
+    species: str,
+    top_k: int,
+    *,
+    query_rewrite: bool = True,
+    hybrid_rerank: bool = True,
+    candidate_multiplier: int = DEFAULT_RERANK_CANDIDATE_MULTIPLIER,
+    max_candidates: int = DEFAULT_MAX_RERANK_CANDIDATES,
+    query_rewriter: Callable[[str, str], str] | None = None,
+) -> SearchRun:
+    retrieval_query = query
+    rewrite_failed = False
+    if query_rewrite:
+        try:
+            cache_key = (species, query.strip())
+            if query_rewriter is None and cache_key in QUERY_REWRITE_CACHE:
+                retrieval_query = QUERY_REWRITE_CACHE[cache_key]
+            else:
+                raw_query = (
+                    query_rewriter(query, species)
+                    if query_rewriter is not None
+                    else rewrite_retrieval_query(client, query, species)
+                )
+                retrieval_query = sanitize_retrieval_query(raw_query)
+                if query_rewriter is None:
+                    QUERY_REWRITE_CACHE[cache_key] = retrieval_query
+        except Exception:
+            rewrite_failed = True
+            retrieval_query = query
+
+    embedding = embed_texts(client, [query_embedding_text(retrieval_query)])[0]
     candidate_k = rerank_candidate_count(
         top_k,
         hybrid_rerank=hybrid_rerank,
@@ -622,8 +741,10 @@ def search(
     )
     candidates = query_collection(collection, embedding, species, candidate_k)
     if hybrid_rerank:
-        return hybrid_rerank_results(query, candidates, top_k)
-    return candidates[:top_k]
+        results = hybrid_rerank_results(retrieval_query, candidates, top_k)
+    else:
+        results = candidates[:top_k]
+    return SearchRun(retrieval_query, rewrite_failed, results)
 
 
 def print_results(results: Sequence[SearchResult]) -> None:
@@ -647,17 +768,22 @@ def run_query(args: argparse.Namespace) -> None:
     metadata = collection.metadata or {}
     if metadata.get("embedding_model") != MODEL or metadata.get("embedding_dimension") != DIMENSION:
         raise RagDbError("컬렉션의 임베딩 모델 또는 차원이 현재 검색 설정과 다릅니다.")
-    results = search(
+    run = run_search(
         openai_client(),
         collection,
         args.query,
         args.species,
         args.top_k,
+        query_rewrite=not args.no_query_rewrite,
         hybrid_rerank=not args.no_hybrid_rerank,
         candidate_multiplier=args.candidate_multiplier,
         max_candidates=args.max_candidates,
     )
-    print_results(results)
+    print(f"원문 질문: {args.query}")
+    print(f"검색 질의: {run.retrieval_query}")
+    if run.rewrite_failed:
+        print("주의: query rewrite에 실패해 원문 질문으로 검색했습니다.")
+    print_results(run.results)
 
 
 def validate_gold_cases(cases: Sequence[dict[str, Any]]) -> None:
@@ -717,7 +843,9 @@ def run_evaluate(args: argparse.Namespace) -> None:
     passed = 0
     reciprocal_rank_total = 0.0
     total_seconds = 0.0
-    mode = "hybrid-rerank" if not args.no_hybrid_rerank else "dense-only"
+    rewrite_mode = "query-rewrite" if not args.no_query_rewrite else "original-query"
+    retrieval_mode = "hybrid-rerank" if not args.no_hybrid_rerank else "dense-only"
+    mode = f"{rewrite_mode} + {retrieval_mode}"
     print(f"평가 모드: {mode}")
     if not args.no_hybrid_rerank:
         print(
@@ -726,30 +854,34 @@ def run_evaluate(args: argparse.Namespace) -> None:
         )
     for case in cases:
         started = time.perf_counter()
-        results = search(
+        run = run_search(
             openai,
             collection,
             case["query"],
             case["species"],
             case["top_k"],
+            query_rewrite=not args.no_query_rewrite,
             hybrid_rerank=not args.no_hybrid_rerank,
             candidate_multiplier=args.candidate_multiplier,
             max_candidates=args.max_candidates,
         )
         elapsed = time.perf_counter() - started
         total_seconds += elapsed
-        ok, failures = score_case(case, results)
-        expected_rank = expected_document_rank(case, results)
+        ok, failures = score_case(case, run.results)
+        expected_rank = expected_document_rank(case, run.results)
         if expected_rank is not None:
             reciprocal_rank_total += 1.0 / expected_rank
         status = "PASS" if ok else "FAIL"
         rank_label = f"rank={expected_rank}" if expected_rank is not None else "rank=miss"
         print(f"[{status}] {case['case_id']} ({rank_label}, {elapsed * 1000:.0f}ms): {case['query']}")
+        print(f"  retrieval_query: {run.retrieval_query}")
+        if run.rewrite_failed:
+            print("  rewrite_failed: true")
         if ok:
             passed += 1
         else:
             print(f"  사유: {', '.join(failures)}")
-            for result in results:
+            for result in run.results:
                 print(
                     f"  {result.rank}. {result.metadata.get('document_id')} "
                     f"(유사도 {result.similarity:.4f})"
@@ -785,6 +917,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-hybrid-rerank",
         action="store_true",
         help="Show/evaluate raw dense retrieval results without the lightweight hybrid rerank step.",
+    )
+    parser.add_argument(
+        "--no-query-rewrite",
+        action="store_true",
+        help="Use the original user question for retrieval instead of an English rewritten query.",
     )
     parser.add_argument(
         "--candidate-multiplier",

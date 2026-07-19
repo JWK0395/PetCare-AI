@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def print_debug(trace: object) -> None:
+    print("\n===== DEBUG: 원문 질문 =====", file=sys.stderr)
+    print(trace.original_question, file=sys.stderr)
+    print("\n===== DEBUG: 검색 질의 =====", file=sys.stderr)
+    print(trace.retrieval_query, file=sys.stderr)
+    if trace.query_rewrite_failed:
+        print("query rewrite 실패: 원문 질문으로 검색했습니다.", file=sys.stderr)
     print("\n===== DEBUG: 질문 임베딩 프롬프트 =====", file=sys.stderr)
     print(trace.embedding_prompt, file=sys.stderr)
     print("\n===== DEBUG: 검색 순위 =====", file=sys.stderr)

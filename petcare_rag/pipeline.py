@@ -21,6 +21,7 @@ from .models import Citation, PipelineTrace, RagAnswer, RagResponse, RetrievedCh
 Species = Literal["dog", "cat"]
 Embedder = Callable[[str], Sequence[float]]
 Generator = Callable[[str, str, dict[str, Any]], dict[str, Any] | RagAnswer]
+QueryRewriter = Callable[[str, Species], str]
 
 GENERATION_MODEL = "gpt-5.4-mini"
 DEFAULT_TOP_K = 5
@@ -158,6 +159,31 @@ def embed_question(
     return vector
 
 
+def resolve_retrieval_query(
+    question: str,
+    species: Species,
+    *,
+    query_rewrite_enabled: bool = True,
+    rewrite_client: Any | None = None,
+    query_rewriter: QueryRewriter | None = None,
+) -> tuple[str, bool]:
+    """Use an English retrieval query for the English Cornell corpus."""
+
+    if not query_rewrite_enabled:
+        return question, False
+    try:
+        raw_query = (
+            query_rewriter(question, species)
+            if query_rewriter is not None
+            else rag_db.rewrite_retrieval_query(
+                rewrite_client or rag_db.openai_client(), question, species
+            )
+        )
+        return rag_db.sanitize_retrieval_query(raw_query), False
+    except Exception:
+        return question, True
+
+
 def _lexical_terms(text: str) -> list[str]:
     return re.findall(r"[0-9a-z가-힣]+", text.lower())
 
@@ -239,6 +265,7 @@ def retrieve(
     species: Species,
     top_k: int = DEFAULT_TOP_K,
     *,
+    retrieval_query: str | None = None,
     db_path: Path = rag_db.DEFAULT_DB_PATH,
     collection_name: str = rag_db.DEFAULT_COLLECTION,
     collection: Any | None = None,
@@ -249,9 +276,12 @@ def retrieve(
     """Retrieve valid Cornell chunks, then optionally hybrid-rerank candidates."""
 
     question, species = validate_request(question, species, top_k)
+    search_query = (retrieval_query or question).strip()
+    if not search_query:
+        raise RagPipelineError("검색 질의는 비어 있을 수 없습니다.")
     collection = collection or open_collection(db_path, collection_name)
     vector = embed_question(
-        question, embedding_client=embedding_client, embedder=embedder
+        search_query, embedding_client=embedding_client, embedder=embedder
     )
     try:
         candidate_k = (
@@ -293,7 +323,7 @@ def retrieve(
             )
         )
     if hybrid_rerank_enabled:
-        return hybrid_rerank(question, chunks, top_k)
+        return hybrid_rerank(search_query, chunks, top_k)
     return chunks[:top_k]
 
 
@@ -559,14 +589,25 @@ def run_pipeline(
     collection: Any | None = None,
     embedding_client: Any | None = None,
     generation_client: Any | None = None,
+    rewrite_client: Any | None = None,
     embedder: Embedder | None = None,
     generator: Generator | None = None,
+    query_rewriter: QueryRewriter | None = None,
+    query_rewrite_enabled: bool = True,
 ) -> tuple[RagResponse, PipelineTrace]:
     question, species = validate_request(question, species, top_k)
+    retrieval_query, query_rewrite_failed = resolve_retrieval_query(
+        question,
+        species,
+        query_rewrite_enabled=query_rewrite_enabled,
+        rewrite_client=rewrite_client,
+        query_rewriter=query_rewriter,
+    )
     chunks = retrieve(
         question,
         species,
         top_k,
+        retrieval_query=retrieval_query,
         db_path=db_path,
         collection_name=collection_name,
         collection=collection,
@@ -584,7 +625,10 @@ def run_pipeline(
     )
     response = build_response(question, species, chunks, generated)
     trace = PipelineTrace(
-        embedding_prompt=rag_db.query_embedding_text(question),
+        original_question=question,
+        retrieval_query=retrieval_query,
+        query_rewrite_failed=query_rewrite_failed,
+        embedding_prompt=rag_db.query_embedding_text(retrieval_query),
         retrieved_chunks=chunks,
         context=context,
         generation_prompt=generation_prompt,

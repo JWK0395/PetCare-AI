@@ -67,6 +67,9 @@ class RagResponse:
 class PipelineTrace:
     """Safe learning trace. It deliberately never contains API keys or vectors."""
 
+    original_question: str
+    retrieval_query: str
+    query_rewrite_failed: bool
     embedding_prompt: str
     retrieved_chunks: list[RetrievedChunk]
     context: str

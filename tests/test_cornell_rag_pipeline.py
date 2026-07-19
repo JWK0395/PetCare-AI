@@ -19,6 +19,7 @@ from petcare_rag import (  # noqa: E402
     build_context,
     generate_answer,
     retrieve,
+    run_pipeline,
 )
 from petcare_rag.pipeline import (  # noqa: E402
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -322,6 +323,51 @@ class WholePipelineTests(unittest.TestCase):
         self.assertEqual(len(result.citations), 1)
         self.assertEqual(result.citations[0].url, "https://www.vet.cornell.edu/topic-1")
         self.assertEqual(result.citations[0].chunk_id, "chunk_1")
+
+    def test_run_pipeline_uses_rewritten_query_for_embedding_but_keeps_original_answer_question(self) -> None:
+        embedding_prompts = []
+        response, trace = run_pipeline(
+            "강아지가 자일리톨 껌을 먹으면 위험한가?",
+            "dog",
+            collection=FakeCollection(),
+            embedder=lambda prompt: embedding_prompts.append(prompt) or VECTOR,
+            query_rewriter=lambda _question, _species: "dog xylitol gum toxicity hypoglycemia",
+            generator=lambda *_: {
+                "answer": "검색된 Cornell 근거에 따른 설명입니다. [1]",
+                "cited_source_numbers": [1],
+                "insufficient_evidence": False,
+                "disclaimer": "ignored",
+            },
+        )
+
+        self.assertEqual(response.question, "강아지가 자일리톨 껌을 먹으면 위험한가?")
+        self.assertEqual(trace.original_question, response.question)
+        self.assertEqual(trace.retrieval_query, "dog xylitol gum toxicity hypoglycemia")
+        self.assertFalse(trace.query_rewrite_failed)
+        self.assertEqual(
+            embedding_prompts[0],
+            "task: question answering | query: dog xylitol gum toxicity hypoglycemia",
+        )
+
+    def test_run_pipeline_falls_back_when_query_rewrite_fails(self) -> None:
+        embedding_prompts = []
+        _response, trace = run_pipeline(
+            "강아지 구토",
+            "dog",
+            collection=FakeCollection(),
+            embedder=lambda prompt: embedding_prompts.append(prompt) or VECTOR,
+            query_rewriter=lambda _question, _species: (_ for _ in ()).throw(RuntimeError("boom")),
+            generator=lambda *_: {
+                "answer": "검색된 Cornell 근거에 따른 설명입니다. [1]",
+                "cited_source_numbers": [1],
+                "insufficient_evidence": False,
+                "disclaimer": "ignored",
+            },
+        )
+
+        self.assertTrue(trace.query_rewrite_failed)
+        self.assertEqual(trace.retrieval_query, "강아지 구토")
+        self.assertEqual(embedding_prompts[0], "task: question answering | query: 강아지 구토")
 
     def test_same_dependencies_produce_deterministic_response(self) -> None:
         kwargs = {

@@ -6,6 +6,7 @@
 
 ```text
 Cornell JSONL
+→ 한국어 질문을 영어 retrieval query로 rewrite
 → OpenAI 질문 임베딩
 → ChromaDB dense 후보 검색
 → hybrid rerank
@@ -32,23 +33,27 @@ Cornell JSONL
 
 > 먼저 LLM 답변을 보기 전에, 검색 단계가 올바른 Cornell 문서를 top-k 안에 포함하는지 Recall@k와 MRR로 평가했다.
 
-## 2. dense-only와 hybrid-rerank 비교
+## 2. query rewrite와 hybrid-rerank 비교
 
-현재 품질 강화의 핵심은 외부 reranker 모델을 새로 호출하는 것이 아니라, ChromaDB dense 검색 후보를 더 넓게 가져온 뒤 dense similarity와 BM25 스타일 lexical score를 함께 사용해 최종 순서를 다시 정렬하는 것이다.
+현재 corpus는 영어 Cornell 문서이고 사용자는 한국어로 질문할 수 있다. 따라서 한국어 질문을 그대로 영어 문서에 검색하면 검색기가 질문의 핵심 의도를 충분히 잡지 못할 수 있다.
 
-비교해야 하는 설정은 두 가지다.
+현재 품질 강화의 첫 단계는 한국어 질문을 영어 검색 질의로 rewrite하는 것이다. 두 번째 단계는 ChromaDB dense 검색 후보를 더 넓게 가져온 뒤 dense similarity와 BM25 스타일 lexical score를 함께 사용해 최종 순서를 다시 정렬하는 것이다.
+
+비교해야 하는 설정은 세 가지다.
 
 ```powershell
+python tools/manage_cornell_rag_db.py evaluate --no-query-rewrite --no-hybrid-rerank
 python tools/manage_cornell_rag_db.py evaluate --no-hybrid-rerank
 python tools/manage_cornell_rag_db.py evaluate
 ```
 
-- `--no-hybrid-rerank`: ChromaDB dense 검색 결과만 평가한다.
-- 기본 실행: dense 후보를 더 넓게 가져온 뒤 hybrid rerank한 최종 top-k를 평가한다.
+- `--no-query-rewrite --no-hybrid-rerank`: 한국어 원문 질문을 그대로 dense 검색한다.
+- `--no-hybrid-rerank`: 영어로 rewrite된 retrieval query로 dense 검색만 평가한다.
+- 기본 실행: 영어로 rewrite된 retrieval query로 dense 후보를 넓게 가져온 뒤 hybrid rerank한 최종 top-k를 평가한다.
 
 발표에서는 아직 측정 전 결과를 단정하지 않는다.
 
-> dense-only 대비 hybrid rerank가 Recall@k 또는 MRR을 높이는지 실험으로 확인한다.
+> 한국어 원문 검색 대비 query rewrite가 Recall@k와 MRR을 높이는지 먼저 확인하고, 그 다음 hybrid rerank가 추가로 순위 품질을 개선하는지 비교한다.
 
 ## 3. 출처 품질
 
@@ -83,6 +88,7 @@ python tools/manage_cornell_rag_db.py evaluate
 추가로 발표에서 분리해서 보면 좋은 시간은 다음과 같다.
 
 - 질문 임베딩 생성 시간
+- query rewrite 시간
 - ChromaDB dense 검색 시간
 - hybrid rerank 시간
 - LLM 답변 생성 시간
@@ -100,19 +106,25 @@ python tools/manage_cornell_rag_db.py evaluate
 python tools/manage_cornell_rag_db.py inspect
 ```
 
-2. dense-only baseline 평가
+2. 한국어 원문 dense-only baseline 평가
+
+```powershell
+python tools/manage_cornell_rag_db.py evaluate --no-query-rewrite --no-hybrid-rerank
+```
+
+3. 영어 query rewrite + dense-only 평가
 
 ```powershell
 python tools/manage_cornell_rag_db.py evaluate --no-hybrid-rerank
 ```
 
-3. hybrid-rerank 평가
+4. 영어 query rewrite + hybrid-rerank 평가
 
 ```powershell
 python tools/manage_cornell_rag_db.py evaluate
 ```
 
-4. 대표 질문으로 최종 답변 확인
+5. 대표 질문으로 최종 답변 확인
 
 ```powershell
 python tools/run_cornell_rag.py `
@@ -122,17 +134,19 @@ python tools/run_cornell_rag.py `
   --debug
 ```
 
-5. 결과 표 작성
+6. 결과 표 작성
 
 | 설정 | Recall@k | MRR | 평균 검색 지연시간 | 해석 |
 | --- | --- | --- | --- | --- |
-| dense-only | 측정 예정 | 측정 예정 | 측정 예정 | 기본 ChromaDB dense 검색 |
-| hybrid-rerank | 측정 예정 | 측정 예정 | 측정 예정 | dense 후보를 넓게 가져온 뒤 lexical score로 재정렬 |
+| Korean dense-only | 측정 예정 | 측정 예정 | 측정 예정 | 한국어 질문을 그대로 영어 corpus에 검색 |
+| Rewrite + dense-only | 측정 예정 | 측정 예정 | 측정 예정 | 영어 retrieval query로 dense 검색 |
+| Rewrite + hybrid-rerank | 측정 예정 | 측정 예정 | 측정 예정 | 영어 retrieval query로 후보 확장 후 lexical score 재정렬 |
 
 ## 7. 해석할 때 주의할 점
 
 - 골든 질문 12개는 smoke test다. 전체 의료 질의 품질을 완전히 대표하지 않는다.
-- Cornell corpus는 영어이고 사용자는 한국어로 질문할 수 있으므로, BM25 스타일 lexical score가 항상 유리하다고 단정하면 안 된다.
+- Cornell corpus는 영어이고 사용자는 한국어로 질문할 수 있으므로, query rewrite 전후를 분리해서 비교해야 한다.
+- BM25 스타일 lexical score는 영어 retrieval query를 기준으로 사용할 때 의미가 있다.
 - hybrid rerank가 Recall@k를 높여도 지연시간이 증가할 수 있다.
 - 검색이 좋아져도 LLM 답변이 항상 좋아지는 것은 아니다. 검색 평가와 답변 평가는 분리해서 봐야 한다.
 - 실제 측정 전에는 “성능이 개선됐다”가 아니라 “개선을 목표로 한 실험 설정을 추가했다”고 표현한다.

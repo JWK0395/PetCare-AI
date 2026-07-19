@@ -78,6 +78,12 @@ class FormattingTests(unittest.TestCase):
         with self.assertRaises(rag.RagDbError):
             rag.query_embedding_text("   ")
 
+    def test_retrieval_query_sanitizer_keeps_plain_english_query(self) -> None:
+        self.assertEqual(
+            rag.sanitize_retrieval_query("Query: dog xylitol gum toxicity\n"),
+            "dog xylitol gum toxicity",
+        )
+
     def test_null_metadata_becomes_empty_string(self) -> None:
         metadata = rag.chroma_metadata(row())
         self.assertEqual(metadata["last_updated"], "")
@@ -259,6 +265,96 @@ class CollectionTests(unittest.TestCase):
 
         self.assertEqual(collection.kwargs["n_results"], 3)
         self.assertEqual(results[0].chunk_id, "lexical-match")
+
+    def test_run_search_rewrites_korean_question_before_embedding_and_rerank(self) -> None:
+        class FakeEmbeddings:
+            def __init__(self) -> None:
+                self.inputs: list[str] = []
+
+            def create(self, **kwargs: object) -> object:
+                self.inputs.extend(kwargs["input"])
+                return type("EmbeddingResponse", (), {
+                    "data": [type("EmbeddingItem", (), {"embedding": [0.1] * rag.DIMENSION})()]
+                })()
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.embeddings = FakeEmbeddings()
+
+        class FakeCollection:
+            def __init__(self) -> None:
+                self.kwargs = None
+
+            def query(self, **kwargs: object) -> dict[str, object]:
+                self.kwargs = kwargs
+                return {
+                    "ids": [["dense-only", "lexical-match"]],
+                    "documents": [[
+                        "general wellness and routine checkup information",
+                        "xylitol can cause dangerous hypoglycemia in dogs",
+                    ]],
+                    "metadatas": [[
+                        {"document_id": "general", "title": "General Care", "species": ["dog"]},
+                        {"document_id": "xylitol", "title": "Xylitol Toxicities", "species": ["dog"]},
+                    ]],
+                    "distances": [[0.05, 0.20]],
+                }
+
+        client = FakeClient()
+        run = rag.run_search(
+            client,
+            FakeCollection(),
+            "강아지가 자일리톨 껌을 먹으면 위험한가?",
+            "dog",
+            top_k=1,
+            query_rewriter=lambda _question, _species: "dog xylitol gum toxicity hypoglycemia",
+        )
+
+        self.assertEqual(run.retrieval_query, "dog xylitol gum toxicity hypoglycemia")
+        self.assertFalse(run.rewrite_failed)
+        self.assertEqual(
+            client.embeddings.inputs[0],
+            "task: question answering | query: dog xylitol gum toxicity hypoglycemia",
+        )
+        self.assertEqual(run.results[0].chunk_id, "lexical-match")
+
+    def test_run_search_falls_back_to_original_question_when_rewrite_fails(self) -> None:
+        class FakeEmbeddings:
+            def __init__(self) -> None:
+                self.inputs: list[str] = []
+
+            def create(self, **kwargs: object) -> object:
+                self.inputs.extend(kwargs["input"])
+                return type("EmbeddingResponse", (), {
+                    "data": [type("EmbeddingItem", (), {"embedding": [0.1] * rag.DIMENSION})()]
+                })()
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.embeddings = FakeEmbeddings()
+
+        class FakeCollection:
+            def query(self, **_kwargs: object) -> dict[str, object]:
+                return {
+                    "ids": [["chunk"]],
+                    "documents": [["body"]],
+                    "metadatas": [[{"document_id": "doc", "title": "Title", "species": ["dog"]}]],
+                    "distances": [[0.1]],
+                }
+
+        client = FakeClient()
+        run = rag.run_search(
+            client,
+            FakeCollection(),
+            "강아지 구토",
+            "dog",
+            top_k=1,
+            query_rewriter=lambda _question, _species: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+
+        self.assertTrue(run.rewrite_failed)
+        self.assertEqual(run.retrieval_query, "강아지 구토")
+        self.assertEqual(client.embeddings.inputs[0], "task: question answering | query: 강아지 구토")
 
 
 class EvaluationTests(unittest.TestCase):
