@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import time
 from typing import Any
@@ -8,9 +7,6 @@ from typing import Any
 from langgraph.types import interrupt
 
 from ..models import PetCareState
-from ..prompts import (
-    HANDOFF_SYSTEM_PROMPT,
-)
 from ..response import (
     build_emergency_complete_response,
     build_no_visit_response,
@@ -19,16 +15,15 @@ from ..response import (
 from ..services import (
     get_email_provider,
     get_hospital_search_provider,
-    get_llm_service,
 )
 from ..utils import (
     add_error,
     append_conversation_message,
     node_result,
 )
-from ..models import HandoffOutput
 from ..handoff import (
     build_handoff_document,
+    build_handoff_summary_from_state,
     format_handoff_text,
 )
 
@@ -234,72 +229,11 @@ def generate_emergency_email(
             {},
         )
 
-        prompt = f"""
-현재 사용자 입력:
-{state["user_input"]}
-
-현재 증상 구조화 결과:
-{json.dumps(
-    state.get(
-        "assessment",
-        {},
-    ),
-    ensure_ascii=False,
-)}
-
-응급 위험 신호:
-{json.dumps(
-    state.get(
-        "emergency_hits",
-        [],
-    ),
-    ensure_ascii=False,
-)}
-
-문진 기록:
-{json.dumps(
-    state.get(
-        "follow_up_history",
-        [],
-    ),
-    ensure_ascii=False,
-)}
-
-최근 일기:
-{state.get("diary_summary", "없음")}
-
-진단서:
-{state.get("diagnosis_summary", "없음")}
-
-대화 기록:
-{json.dumps(
-    state.get(
-        "conversation_history",
-        [],
-    ),
-    ensure_ascii=False,
-)}
-        """.strip()
-
         summary = (
-            get_llm_service().parse(
-                schema=HandoffOutput,
-                system_prompt=(
-                    HANDOFF_SYSTEM_PROMPT
-                ),
-                user_prompt=prompt,
+            build_handoff_summary_from_state(
+                state
             )
         )
-
-        if not isinstance(
-            summary,
-            HandoffOutput,
-        ):
-            raise TypeError(
-                "HandoffOutput 형식이 "
-                "아닙니다."
-            )
-
         handoff = build_handoff_document(
             state,
             summary,

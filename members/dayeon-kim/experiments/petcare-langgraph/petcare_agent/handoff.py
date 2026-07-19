@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import re
 from typing import Any
 
 from .models import HandoffOutput, PetCareState
@@ -15,6 +16,43 @@ SEX_LABELS = {
     "male": "수컷",
     "female": "암컷",
 }
+
+
+SYMPTOM_LABELS = {
+    "appetite_loss": "식욕 감소",
+    "vomiting": "구토",
+    "diarrhea": "설사",
+    "fever": "발열 또는 체온 상승",
+    "lethargy": "기력 저하",
+    "pain": "통증",
+    "pallor": "창백함 또는 점막 색 변화",
+    "urinary_abnormality": "배뇨 이상",
+    "respiratory_issue": "호흡 이상",
+    "respiratory_distress": "호흡곤란",
+    "cyanosis": "혀 또는 잇몸 색 변화",
+    "unconsciousness": "의식 또는 반응 저하",
+    "seizure": "경련 또는 발작",
+    "severe_bleeding": "심한 출혈",
+    "urinary_obstruction": "소변을 보지 못함",
+    "toxin_ingestion": "독성물질 섭취",
+    "severe_deterioration": "급격한 상태 악화",
+    "owner_urgent_worsening": "급격한 상태 악화",
+    "other": "기타 건강 이상",
+}
+
+
+HANDOFF_ONLY_PATTERNS = [
+    r"병원\s*전달용",
+    r"병원용\s*(?:요약|정리|문서)",
+    r"전달용\s*(?:요약|정리|문서)",
+    r"진료용\s*(?:요약|정리|문서)",
+    r"pdf",
+]
+
+
+SIMPLE_REPLY_PATTERNS = [
+    r"^(예|네|응|그래|좋아|아니오|아니요|아니|없어|없어요)$",
+]
 
 
 def _format_date(
@@ -264,10 +302,18 @@ def _weight_text(
 def _status_classification(
     state: PetCareState,
 ) -> str:
-    if state.get("route") == "emergency":
+    route = state.get("route")
+
+    if route == "general_chat":
+        route = state.get(
+            "previous_triage",
+            {},
+        ).get("route")
+
+    if route == "emergency":
         return "응급 징후 가능성"
 
-    if state.get("route") == "non_emergency":
+    if route == "non_emergency":
         return "비응급 건강 이상"
 
     return "상태 확인"
@@ -276,12 +322,13 @@ def _status_classification(
 def _risk_signs(
     state: PetCareState,
 ) -> list[str]:
+    _, _, emergency_hits = (
+        _effective_triage_data(state)
+    )
+
     values = [
         str(item.get("message", "")).strip()
-        for item in state.get(
-            "emergency_hits",
-            [],
-        )
+        for item in emergency_hits
         if str(
             item.get("message", "")
         ).strip()
@@ -289,6 +336,284 @@ def _risk_signs(
 
     return _deduplicate(values)
 
+
+
+def _effective_triage_data(
+    state: PetCareState,
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    previous = state.get("previous_triage", {})
+
+    strategy = state.get("question_strategy", {})
+    history = state.get("follow_up_history", [])
+    emergency_hits = state.get("emergency_hits", [])
+
+    if not strategy.get("detected_symptoms"):
+        strategy = previous.get(
+            "question_strategy",
+            strategy,
+        )
+
+    if not history:
+        history = previous.get(
+            "follow_up_history",
+            history,
+        )
+
+    if not emergency_hits:
+        emergency_hits = previous.get(
+            "emergency_hits",
+            emergency_hits,
+        )
+
+    return strategy, history, emergency_hits
+
+
+def _is_handoff_only_text(text: str) -> bool:
+    normalized = text.strip().lower()
+
+    return any(
+        re.search(pattern, normalized)
+        for pattern in HANDOFF_ONLY_PATTERNS
+    )
+
+
+def _is_simple_reply(text: str) -> bool:
+    normalized = text.strip()
+
+    return any(
+        re.search(pattern, normalized)
+        for pattern in SIMPLE_REPLY_PATTERNS
+    )
+
+
+def _one_line(
+    text: str,
+    *,
+    max_length: int = 180,
+) -> str:
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        text,
+    ).strip()
+
+    if len(normalized) <= max_length:
+        return normalized
+
+    return normalized[: max_length - 1].rstrip() + "…"
+
+
+def _symptom_codes_from_state(
+    state: PetCareState,
+) -> list[str]:
+    strategy, history, emergency_hits = (
+        _effective_triage_data(state)
+    )
+
+    codes: list[str] = []
+
+    assessment = state.get("assessment", {})
+
+    for item in assessment.get("symptoms", []):
+        if item.get("negated", False):
+            continue
+
+        code = str(item.get("code", "")).strip()
+
+        if code and code not in codes:
+            codes.append(code)
+
+    for code in strategy.get(
+        "detected_symptoms",
+        [],
+    ):
+        normalized = str(code).strip()
+
+        if normalized and normalized not in codes:
+            codes.append(normalized)
+
+    for item in history:
+        code = str(item.get("symptom", "")).strip()
+
+        if code and code not in codes:
+            codes.append(code)
+
+    for item in emergency_hits:
+        code = str(
+            item.get("symptom_code", "")
+        ).strip()
+
+        if code and code not in codes:
+            codes.append(code)
+
+    return codes
+
+
+def _chief_complaints(
+    state: PetCareState,
+) -> list[str]:
+    labels: list[str] = []
+    codes = _symptom_codes_from_state(state)
+
+    if "respiratory_distress" in codes:
+        codes = [
+            code
+            for code in codes
+            if code != "respiratory_issue"
+        ]
+
+    if "urinary_obstruction" in codes:
+        codes = [
+            code
+            for code in codes
+            if code != "urinary_abnormality"
+        ]
+
+    for code in codes:
+        label = SYMPTOM_LABELS.get(
+            code,
+            code,
+        )
+
+        if label and label not in labels:
+            labels.append(label)
+
+    if labels == ["기타 건강 이상"]:
+        user_input = _one_line(
+            state.get("user_input", "")
+        )
+
+        if user_input and not _is_handoff_only_text(
+            user_input
+        ):
+            return [user_input]
+
+    return labels
+
+
+def _fallback_user_health_text(
+    state: PetCareState,
+) -> str | None:
+    current = _one_line(
+        state.get("user_input", "")
+    )
+
+    if (
+        current
+        and not _is_handoff_only_text(current)
+        and not _is_simple_reply(current)
+    ):
+        return current
+
+    for item in reversed(
+        state.get("conversation_history", [])
+    ):
+        if item.get("role") != "user":
+            continue
+
+        content = _one_line(
+            str(item.get("content", ""))
+        )
+
+        if (
+            content
+            and not _is_handoff_only_text(content)
+            and not _is_simple_reply(content)
+        ):
+            return content
+
+    return None
+
+
+def _major_changes(
+    state: PetCareState,
+) -> list[str]:
+    _, history, _ = _effective_triage_data(state)
+    values: list[str] = []
+
+    initial = _fallback_user_health_text(state)
+
+    if initial:
+        values.append(initial)
+
+    for item in history:
+        if item.get("kind") != "additional_symptoms":
+            continue
+
+        if item.get("answer_status") != "reported":
+            continue
+
+        answer = _one_line(
+            str(item.get("answer", ""))
+        )
+
+        if answer:
+            values.append(
+                f"추가로 보고된 증상: {answer}"
+            )
+
+    return _deduplicate(values)
+
+
+def _course(
+    state: PetCareState,
+) -> list[str]:
+    _, history, emergency_hits = (
+        _effective_triage_data(state)
+    )
+    values: list[str] = []
+
+    for item in history:
+        if item.get("kind") != "symptom_detail":
+            continue
+
+        answer = _one_line(
+            str(item.get("answer", ""))
+        )
+
+        if not answer:
+            continue
+
+        symptom_code = str(
+            item.get("symptom", "other")
+        )
+        label = SYMPTOM_LABELS.get(
+            symptom_code,
+            "증상",
+        )
+        values.append(
+            f"{label}: {answer}"
+        )
+
+    if not values and emergency_hits:
+        values.append(
+            "현재 보호자 입력에서 응급 위험 징후가 확인됨"
+        )
+
+    if not values and _major_changes(state):
+        values.append(
+            "보호자가 보고한 현재 상태를 기준으로 요약함"
+        )
+
+    return _deduplicate(values)
+
+
+def build_handoff_summary_from_state(
+    state: PetCareState,
+) -> HandoffOutput:
+    return HandoffOutput(
+        chief_complaints=_chief_complaints(
+            state
+        ),
+        major_changes=_major_changes(
+            state
+        ),
+        course=_course(state),
+    )
 
 def build_handoff_document(
     state: PetCareState,

@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-import json
 import re
 import time
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from ..models import AssessmentOutput, PetCareState
-from ..prompts import ASSESSMENT_SYSTEM_PROMPT
-from ..services import get_llm_service
-from ..utils import (
-    add_error,
-    format_conversation_history,
-    node_result,
-)
+from ..models import PetCareState
+from ..utils import node_result
 from .context import prepare_backend_context
+from .safety import raw_keyword_hits
+from .triage import detect_symptoms, should_open_new_triage
 
 
 HANDOFF_REQUEST_PATTERNS = [
@@ -29,154 +24,137 @@ HANDOFF_REQUEST_PATTERNS = [
 ]
 
 
+POST_TRIAGE_VISIT_PATTERNS = [
+    r"병원(?:에|으로)?\s*(?:갈|가|방문)",
+    r"(?:그냥\s*)?(?:갈래|갈게|가야겠|가겠습니다)",
+    r"(?:진료|검사)\s*(?:받으러|받을래|받을게)",
+]
+
+
 def detect_handoff_request(text: str) -> bool:
+    normalized = text.strip()
+
     return any(
-        re.search(pattern, text.strip())
+        re.search(pattern, normalized)
         for pattern in HANDOFF_REQUEST_PATTERNS
     )
 
 
-def _follow_up_payload(
+def detect_post_triage_visit_request(
     state: PetCareState,
-) -> list[dict[str, Any]]:
+    text: str,
+) -> bool:
+    if not state.get("post_triage_mode", False):
+        return False
+
+    previous_route = state.get(
+        "previous_triage",
+        {},
+    ).get("route")
+
+    if previous_route != "non_emergency":
+        return False
+
+    normalized = text.strip()
+
+    return any(
+        re.search(pattern, normalized)
+        for pattern in POST_TRIAGE_VISIT_PATTERNS
+    )
+
+
+def _symptom_payload(text: str) -> list[dict[str, Any]]:
+    codes: list[str] = []
+
+    for code in detect_symptoms(text):
+        if code not in codes:
+            codes.append(code)
+
+    for code in sorted(raw_keyword_hits(text)):
+        if code not in codes:
+            codes.append(code)
+
+    if not codes and should_open_new_triage(text):
+        codes.append("other")
+
     return [
         {
-            "field": item.get("field"),
-            "kind": item.get("kind"),
-            "symptom": item.get("symptom"),
-            "answer": item.get("answer"),
-            "answer_status": item.get(
-                "answer_status"
-            ),
+            "code": code,
+            "evidence": text.strip(),
+            "negated": False,
         }
-        for item in state.get(
-            "follow_up_history",
-            [],
-        )
+        for code in codes
     ]
 
 
-def _user_history(
-    state: PetCareState,
-) -> list[dict[str, str]]:
-    return [
-        item
-        for item in state.get(
-            "conversation_history",
-            [],
-        )
-        if item.get("role") == "user"
-    ]
-
-
-def _resolve_intent(
-    state: PetCareState,
-    intent: str,
-) -> str:
-    if (
-        state.get("triage_status")
-        == "collecting"
-        or state.get("follow_up_history")
-    ):
-        return "health_related"
-
-    return intent
+def _is_active_health_context(state: PetCareState) -> bool:
+    return (
+        state.get("triage_status") == "collecting"
+        or bool(state.get("follow_up_history"))
+    )
 
 
 def assess_input(
     state: PetCareState,
 ) -> dict[str, Any]:
     started = time.perf_counter()
+    user_input = state.get("user_input", "").strip()
 
-    try:
-        conversation_text = (
-            format_conversation_history(
-                _user_history(state),
-                exclude_last_user_message=True,
-            )
-        )
+    post_triage_visit = detect_post_triage_visit_request(
+        state,
+        user_input,
+    )
+    handoff_requested = (
+        detect_handoff_request(user_input)
+        or post_triage_visit
+    )
+    symptoms = _symptom_payload(user_input)
 
-        prompt = f"""
-현재 사용자 입력:
-{state["user_input"]}
+    health_related = (
+        _is_active_health_context(state)
+        or bool(symptoms)
+        or should_open_new_triage(user_input)
+    )
 
-이전 사용자 대화:
-{conversation_text}
+    intent = (
+        "health_related"
+        if health_related
+        else "general_chat"
+    )
 
-문진 답변 기록:
-{json.dumps(
-    _follow_up_payload(state),
-    ensure_ascii=False,
-)}
+    if post_triage_visit:
+        user_goal = "이전 상태 확인을 바탕으로 병원 전달용 문서 생성"
+    elif handoff_requested:
+        user_goal = "병원 전달용 문서 생성"
+    elif health_related:
+        user_goal = "반려동물 건강 상태 확인"
+    else:
+        user_goal = "일반 대화 또는 등록 기록 조회"
 
-현재 질문 전략:
-{json.dumps(
-    state.get("question_strategy", {}),
-    ensure_ascii=False,
-)}
+    assessment = {
+        "intent": intent,
+        "handoff_requested": handoff_requested,
+        "user_goal": user_goal,
+        "symptoms": symptoms,
+    }
 
-최근 일기 요약:
-{state.get("diary_summary", "없음")}
+    updates: dict[str, Any] = {
+        "assessment": assessment,
+        "handoff_requested": handoff_requested,
+    }
 
-진단서 요약:
-{state.get("diagnosis_summary", "없음")}
-        """.strip()
+    if post_triage_visit:
+        updates["visit_decision"] = "yes"
 
-        assessment = get_llm_service().parse(
-            schema=AssessmentOutput,
-            system_prompt=ASSESSMENT_SYSTEM_PROMPT,
-            user_prompt=prompt,
-        )
+    if intent == "general_chat" or handoff_requested:
+        updates["route"] = "general_chat"
 
-        if not isinstance(
-            assessment,
-            AssessmentOutput,
-        ):
-            raise TypeError(
-                "AssessmentOutput 형식이 아닙니다."
-            )
-
-        handoff_requested = (
-            assessment.handoff_requested
-            or detect_handoff_request(
-                state.get("user_input", "")
-            )
-        )
-
-        payload = assessment.model_dump()
-        payload["handoff_requested"] = (
-            handoff_requested
-        )
-        payload["intent"] = _resolve_intent(
-            state,
-            assessment.intent,
-        )
-
-        updates: dict[str, Any] = {
-            "assessment": payload,
-            "handoff_requested": handoff_requested,
-        }
-
-        if (
-            payload["intent"] == "general_chat"
-            or handoff_requested
-        ):
-            updates["route"] = "general_chat"
-
-        return node_result(
-            state,
-            node_name="assess_input",
-            started_at=started,
-            updates=updates,
-        )
-
-    except Exception as error:
-        return add_error(
-            state,
-            node_name="assess_input",
-            error=error,
-            started_at=started,
-        )
+    return node_result(
+        state,
+        node_name="assess_input",
+        started_at=started,
+        updates=updates,
+    )
 
 
 assessment_builder = StateGraph(PetCareState)

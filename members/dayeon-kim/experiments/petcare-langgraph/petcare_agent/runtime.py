@@ -12,6 +12,7 @@ from .models import (
 )
 from .nodes.triage import (
     default_question_strategy,
+    should_continue_previous_triage,
     should_open_new_triage,
 )
 from .utils import trim_conversation_history
@@ -190,6 +191,13 @@ def load_previous_session_context(
                 "follow_up_history",
                 [],
             ),
+            "visit_decision": values.get(
+                "visit_decision",
+                "pending",
+            ),
+            "artifact_path": values.get(
+                "artifact_path"
+            ),
         }
 
     return {
@@ -204,6 +212,41 @@ def load_previous_session_context(
         ),
         "previous_triage": previous_triage,
     }
+
+
+def _copy_strategy_for_continuation(
+    previous_triage: dict[str, Any],
+) -> dict[str, Any]:
+    strategy = default_question_strategy()
+    previous_strategy = previous_triage.get(
+        "question_strategy",
+        {},
+    )
+
+    if isinstance(previous_strategy, dict):
+        strategy.update(previous_strategy)
+
+    for key in [
+        "detected_symptoms",
+        "completed_cycles",
+        "cycle_history",
+        "additional_checks",
+    ]:
+        value = strategy.get(key, [])
+        strategy[key] = (
+            list(value)
+            if isinstance(value, list)
+            else []
+        )
+
+    strategy["active_symptom"] = None
+    strategy["awaiting_additional_check"] = False
+    strategy["additional_answer_status"] = None
+    strategy["unknown_additional_retry_count"] = 0
+    strategy["unknown_additional_unresolved"] = False
+    strategy["finished"] = False
+
+    return strategy
 
 
 def request_to_initial_state(
@@ -236,15 +279,55 @@ def request_to_initial_state(
         previous_session.get("triage_status")
         == "completed"
     )
+    previous_triage = previous_session.get(
+        "previous_triage",
+        {},
+    )
 
     opens_new_triage = should_open_new_triage(
         request.user_input
     )
-
+    continues_previous = (
+        previous_completed
+        and previous_triage.get("route")
+        == "non_emergency"
+        and opens_new_triage
+        and should_continue_previous_triage(
+            request.user_input
+        )
+    )
     post_triage_mode = (
         previous_completed
         and not opens_new_triage
     )
+
+    if continues_previous:
+        question_strategy = (
+            _copy_strategy_for_continuation(
+                previous_triage
+            )
+        )
+        follow_up_history = list(
+            previous_triage.get(
+                "follow_up_history",
+                [],
+            )
+        )
+        triage_status = "collecting"
+        route = None
+    else:
+        question_strategy = default_question_strategy()
+        follow_up_history = []
+        triage_status = (
+            "completed"
+            if post_triage_mode
+            else "idle"
+        )
+        route = (
+            "general_chat"
+            if post_triage_mode
+            else None
+        )
 
     initial_state: PetCareState = {
         "session_id": request.session_id,
@@ -255,35 +338,42 @@ def request_to_initial_state(
         "diagnosis_summary": "",
         "assessment": {},
         "handoff_requested": False,
-        "route": (
-            "general_chat"
-            if post_triage_mode
-            else None
-        ),
+        "route": route,
         "conversation_history": (
             trim_conversation_history(
                 conversation_history
             )
         ),
-        "triage_status": (
-            "completed"
-            if post_triage_mode
-            else "idle"
-        ),
+        "triage_status": triage_status,
         "previous_triage": (
-            previous_session.get(
-                "previous_triage",
-                {},
-            )
-            if post_triage_mode
+            previous_triage
+            if (post_triage_mode or continues_previous)
             else {}
         ),
         "post_triage_mode": post_triage_mode,
-        "question_strategy": default_question_strategy(),
-        "follow_up_history": [],
+        "question_strategy": question_strategy,
+        "follow_up_history": follow_up_history,
         "needs_user_response": False,
-        "emergency_hits": [],
-        "recovery_hits": [],
+        "emergency_hits": (
+            list(
+                previous_triage.get(
+                    "emergency_hits",
+                    [],
+                )
+            )
+            if continues_previous
+            else []
+        ),
+        "recovery_hits": (
+            list(
+                previous_triage.get(
+                    "recovery_hits",
+                    [],
+                )
+            )
+            if continues_previous
+            else []
+        ),
         "rag_query": "",
         "rag_chunks": [],
         "rag_done": False,
@@ -301,6 +391,8 @@ def request_to_initial_state(
     }
 
     return request, initial_state
+
+
 def start_petcare(
     request_payload: dict[str, Any] | GraphStartRequest,
 ) -> GraphStepResult:

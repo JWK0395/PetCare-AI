@@ -15,14 +15,11 @@ from ..documents import (
 )
 from ..handoff import (
     build_handoff_document,
+    build_handoff_summary_from_state,
 )
-from ..models import (
-    HandoffOutput,
-    PetCareState,
-)
+from ..models import PetCareState
 from ..prompts import (
     GENERAL_CHAT_SYSTEM_PROMPT,
-    HANDOFF_SYSTEM_PROMPT,
     NON_EMERGENCY_SYSTEM_PROMPT,
     POST_TRIAGE_SYSTEM_PROMPT,
 )
@@ -387,68 +384,11 @@ def generate_handoff(
     started = time.perf_counter()
 
     try:
-        context = state.get(
-            "backend_context",
-            {},
-        )
-
-        prompt = f"""
-현재 사용자 입력:
-{state["user_input"]}
-
-현재 증상 구조화 결과:
-{json.dumps(
-    state.get(
-        "assessment",
-        {},
-    ),
-    ensure_ascii=False,
-)}
-
-문진 전체 기록:
-{json.dumps(
-    state.get(
-        "follow_up_history",
-        [],
-    ),
-    ensure_ascii=False,
-)}
-
-최근 일기 요약:
-{state.get("diary_summary", "없음")}
-
-진단서 요약:
-{state.get("diagnosis_summary", "없음")}
-
-대화 기록:
-{json.dumps(
-    state.get(
-        "conversation_history",
-        [],
-    ),
-    ensure_ascii=False,
-)}
-        """.strip()
-
         summary = (
-            get_llm_service().parse(
-                schema=HandoffOutput,
-                system_prompt=(
-                    HANDOFF_SYSTEM_PROMPT
-                ),
-                user_prompt=prompt,
+            build_handoff_summary_from_state(
+                state
             )
         )
-
-        if not isinstance(
-            summary,
-            HandoffOutput,
-        ):
-            raise TypeError(
-                "HandoffOutput 형식이 "
-                "아닙니다."
-            )
-
         handoff = build_handoff_document(
             state,
             summary,
