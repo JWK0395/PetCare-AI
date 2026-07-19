@@ -1,23 +1,25 @@
 from __future__ import annotations
 
+import json
 import re
 import time
+from functools import partial
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from ..models import (
-    AssessmentOutput,
-    PetCareState,
-    SymptomItem,
+from ..models import AssessmentOutput, PetCareState
+from ..prompts import ASSESSMENT_SYSTEM_PROMPT
+from ..services import (
+    AgentDependencies,
+    build_default_dependencies,
 )
-from ..utils import node_result
+from ..utils import (
+    add_error,
+    format_conversation_history,
+    node_result,
+)
 from .context import prepare_backend_context
-from .safety import raw_keyword_hits
-from .triage import (
-    detect_symptom_items,
-    should_open_new_triage,
-)
 
 
 HANDOFF_REQUEST_PATTERNS = [
@@ -32,132 +34,188 @@ HANDOFF_REQUEST_PATTERNS = [
 
 
 def detect_handoff_request(text: str) -> bool:
-    normalized = text.strip()
+    """LLM 결과와 별도로 명시적인 병원 전달 요청을 보완한다."""
     return any(
-        re.search(pattern, normalized)
+        re.search(pattern, text.strip())
         for pattern in HANDOFF_REQUEST_PATTERNS
     )
 
 
-def _symptom_payload(text: str) -> list[SymptomItem]:
-    items = detect_symptom_items(text)
-    known_codes = {
-        item.code
-        for item in items
-        if not item.negated
-    }
-
-    for code in sorted(raw_keyword_hits(text)):
-        if code in known_codes:
-            continue
-
-        items.append(
-            SymptomItem(
-                code=code,
-                evidence=text.strip(),
-                negated=False,
-            )
+def _follow_up_payload(
+    state: PetCareState,
+) -> list[dict[str, Any]]:
+    """현재 입력 해석에 필요한 문진 답변만 압축한다."""
+    return [
+        {
+            "field": item.get("field"),
+            "kind": item.get("kind"),
+            "symptom": item.get("symptom"),
+            "answer": item.get("answer"),
+            "answer_status": item.get(
+                "answer_status"
+            ),
+        }
+        for item in state.get(
+            "follow_up_history",
+            [],
         )
-        known_codes.add(code)
+    ]
 
+
+def _user_history(
+    state: PetCareState,
+) -> list[dict[str, str]]:
+    """의도 해석에 필요한 사용자 발화만 선택한다."""
+    return [
+        item
+        for item in state.get(
+            "conversation_history",
+            [],
+        )
+        if item.get("role") == "user"
+    ]
+
+
+def _resolve_intent(
+    state: PetCareState,
+    intent: str,
+) -> str:
+    """진행 중인 문진의 짧은 응답을 일반 대화로 이탈시키지 않는다."""
     if (
-        not any(not item.negated for item in items)
-        and should_open_new_triage(text)
-    ):
-        items.append(
-            SymptomItem(
-                code="other",
-                evidence=text.strip(),
-                negated=False,
-            )
-        )
-
-    return items
-
-
-def _is_active_health_context(state: PetCareState) -> bool:
-    return (
         state.get("triage_status") == "collecting"
-        or bool(state.get("follow_up_history"))
+        or state.get("follow_up_history")
+    ):
+        return "health_related"
+
+    return intent
+
+
+def _assessment_prompt(state: PetCareState) -> str:
+    """기존 LLM 기반 해석을 유지하되 불필요한 전체 기록은 제외한다."""
+    conversation_text = format_conversation_history(
+        _user_history(state),
+        exclude_last_user_message=True,
     )
+
+    return f"""
+현재 사용자 입력:
+{state.get("user_input", "")}
+
+이전 사용자 대화:
+{conversation_text}
+
+문진 답변 기록:
+{json.dumps(
+    _follow_up_payload(state),
+    ensure_ascii=False,
+)}
+
+현재 질문 전략:
+{json.dumps(
+    state.get("question_strategy", {}),
+    ensure_ascii=False,
+)}
+    """.strip()
 
 
 def assess_input(
     state: PetCareState,
+    *,
+    dependencies: AgentDependencies,
 ) -> dict[str, Any]:
+    """LLM으로 사용자 의도와 증상 정보를 구조화한다."""
     started = time.perf_counter()
-    user_input = state.get("user_input", "").strip()
 
-    handoff_requested = detect_handoff_request(user_input)
-    symptoms = _symptom_payload(user_input)
-    positive_symptoms = [
-        item
-        for item in symptoms
-        if not item.negated
-    ]
+    try:
+        assessment = dependencies.require_llm().parse(
+            schema=AssessmentOutput,
+            system_prompt=ASSESSMENT_SYSTEM_PROMPT,
+            user_prompt=_assessment_prompt(state),
+        )
 
-    health_related = (
-        _is_active_health_context(state)
-        or bool(positive_symptoms)
-        or should_open_new_triage(user_input)
+        if not isinstance(
+            assessment,
+            AssessmentOutput,
+        ):
+            raise TypeError(
+                "AssessmentOutput 형식이 아닙니다."
+            )
+
+        handoff_requested = (
+            assessment.handoff_requested
+            or detect_handoff_request(
+                state.get("user_input", "")
+            )
+        )
+
+        payload = assessment.model_dump()
+        payload["handoff_requested"] = (
+            handoff_requested
+        )
+        payload["intent"] = _resolve_intent(
+            state,
+            assessment.intent,
+        )
+
+        updates: dict[str, Any] = {
+            "assessment": payload,
+            "handoff_requested": handoff_requested,
+        }
+
+        if (
+            payload["intent"] == "general_chat"
+            or handoff_requested
+        ):
+            updates["route"] = "general_chat"
+
+        return node_result(
+            state,
+            node_name="assess_input",
+            started_at=started,
+            updates=updates,
+        )
+
+    except Exception as error:
+        return add_error(
+            state,
+            node_name="assess_input",
+            error=error,
+            started_at=started,
+        )
+
+
+def build_assessment_graph(
+    dependencies: AgentDependencies | None = None,
+) -> Any:
+    """상위 Runtime과 동일한 의존성을 사용하는 Assessment Subgraph 생성."""
+    deps = dependencies or build_default_dependencies()
+    builder = StateGraph(PetCareState)
+    builder.add_node(
+        "prepare_backend_context",
+        prepare_backend_context,
     )
-
-    intent = (
-        "health_related"
-        if health_related
-        else "general_chat"
+    builder.add_node(
+        "assess_input",
+        partial(
+            assess_input,
+            dependencies=deps,
+        ),
     )
-
-    if handoff_requested:
-        user_goal = "병원 전달용 문서 생성"
-    elif health_related:
-        user_goal = "반려동물 건강 상태 확인"
-    else:
-        user_goal = "일반 대화 또는 등록 기록 조회"
-
-    assessment = AssessmentOutput(
-        intent=intent,
-        handoff_requested=handoff_requested,
-        user_goal=user_goal,
-        symptoms=symptoms,
+    builder.add_edge(
+        START,
+        "prepare_backend_context",
     )
-
-    updates: dict[str, Any] = {
-        "assessment": assessment.model_dump(),
-        "handoff_requested": handoff_requested,
-    }
-
-    if intent == "general_chat" or handoff_requested:
-        updates["route"] = "general_chat"
-
-    return node_result(
-        state,
-        node_name="assess_input",
-        started_at=started,
-        updates=updates,
+    builder.add_edge(
+        "prepare_backend_context",
+        "assess_input",
     )
+    builder.add_edge(
+        "assess_input",
+        END,
+    )
+    return builder.compile()
 
 
-assessment_builder = StateGraph(PetCareState)
-assessment_builder.add_node(
-    "prepare_backend_context",
-    prepare_backend_context,
-)
-assessment_builder.add_node(
-    "assess_input",
-    assess_input,
-)
-assessment_builder.add_edge(
-    START,
-    "prepare_backend_context",
-)
-assessment_builder.add_edge(
-    "prepare_backend_context",
-    "assess_input",
-)
-assessment_builder.add_edge(
-    "assess_input",
-    END,
-)
-
-assessment_graph = assessment_builder.compile()
+# 개별 Subgraph 사용에 대한 기존 호환성 유지.
+# 상위 PetCare Graph에서는 build_assessment_graph(deps)를 사용한다.
+assessment_graph = build_assessment_graph()

@@ -13,7 +13,7 @@ from .nodes.agents import (
     handoff_subgraph,
     rag_agent,
 )
-from .nodes.assessment import assessment_graph
+from .nodes.assessment import build_assessment_graph
 from .nodes.safety import (
     current_priority_emergency_codes,
     safety_guard,
@@ -126,7 +126,7 @@ def build_petcare_graph(
 
     builder.add_node(
         "assessment_graph",
-        assessment_graph,
+        build_assessment_graph(deps),
     )
     builder.add_node(
         "question_manager",
