@@ -15,9 +15,10 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
@@ -29,6 +30,11 @@ DEFAULT_COLLECTION = "cornell_pet_health_text_embedding_3_small_1536"
 DEFAULT_INPUT = Path("rag_data/chunks/cornell_pet_health_chunks.jsonl")
 DEFAULT_DB_PATH = Path("rag_data/chroma")
 DEFAULT_GOLD = Path("rag_data/evaluation/cornell_retrieval_gold.jsonl")
+DEFAULT_RERANK_CANDIDATE_MULTIPLIER = 3
+DEFAULT_MAX_RERANK_CANDIDATES = 20
+HYBRID_DENSE_WEIGHT = 0.7
+HYBRID_LEXICAL_WEIGHT = 0.3
+TOKEN_RE = re.compile(r"[a-z0-9가-힣]+")
 REQUIRED_FIELDS = {
     "chunk_id",
     "document_id",
@@ -508,9 +514,116 @@ def query_collection(
     ]
 
 
-def search(client: Any, collection: Any, query: str, species: str, top_k: int) -> list[SearchResult]:
+def tokenize_for_rerank(text: str) -> list[str]:
+    """Tokenize Korean/English text for the lightweight lexical reranker."""
+    return TOKEN_RE.findall(text.lower())
+
+
+def normalized_scores(values: Sequence[float]) -> list[float]:
+    if not values:
+        return []
+    minimum = min(values)
+    maximum = max(values)
+    if math.isclose(minimum, maximum):
+        return [1.0 for _ in values]
+    return [(value - minimum) / (maximum - minimum) for value in values]
+
+
+def dense_similarity_scores(results: Sequence[SearchResult]) -> list[float]:
+    """Keep dense similarity magnitude so lexical scores can break close calls."""
+    return [max(0.0, min(1.0, result.similarity)) for result in results]
+
+
+def bm25_scores(query: str, results: Sequence[SearchResult]) -> list[float]:
+    query_terms = tokenize_for_rerank(query)
+    if not query_terms or not results:
+        return [0.0 for _ in results]
+
+    documents = [
+        tokenize_for_rerank(
+            f"{result.metadata.get('title', '')} {result.metadata.get('document_id', '')} {result.document}"
+        )
+        for result in results
+    ]
+    avgdl = sum(len(document) for document in documents) / max(len(documents), 1)
+    k1 = 1.5
+    b = 0.75
+    scores: list[float] = []
+    for document_terms in documents:
+        score = 0.0
+        doc_len = len(document_terms) or 1
+        for term in query_terms:
+            tf = document_terms.count(term)
+            if tf == 0:
+                continue
+            containing = sum(1 for doc in documents if term in doc)
+            idf = math.log(1 + (len(documents) - containing + 0.5) / (containing + 0.5))
+            denominator = tf + k1 * (1 - b + b * doc_len / max(avgdl, 1e-9))
+            score += idf * (tf * (k1 + 1)) / denominator
+        scores.append(score)
+    return scores
+
+
+def hybrid_rerank_results(
+    query: str,
+    results: Sequence[SearchResult],
+    top_k: int,
+    *,
+    dense_weight: float = HYBRID_DENSE_WEIGHT,
+    lexical_weight: float = HYBRID_LEXICAL_WEIGHT,
+) -> list[SearchResult]:
+    if top_k < 1:
+        raise RagDbError("top-k는 1 이상이어야 합니다.")
+    dense = dense_similarity_scores(results)
+    lexical = normalized_scores(bm25_scores(query, results))
+    scored = [
+        (dense_weight * dense_score + lexical_weight * lexical_score, index, result)
+        for index, (result, dense_score, lexical_score) in enumerate(zip(results, dense, lexical))
+    ]
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [replace(result, rank=rank) for rank, (_, _, result) in enumerate(scored[:top_k], start=1)]
+
+
+def rerank_candidate_count(
+    top_k: int,
+    *,
+    hybrid_rerank: bool,
+    candidate_multiplier: int,
+    max_candidates: int,
+) -> int:
+    if top_k < 1:
+        raise RagDbError("top-k는 1 이상이어야 합니다.")
+    if not hybrid_rerank:
+        return top_k
+    if candidate_multiplier < 1:
+        raise RagDbError("--candidate-multiplier는 1 이상이어야 합니다.")
+    if max_candidates < 1:
+        raise RagDbError("--max-candidates는 1 이상이어야 합니다.")
+    return min(max_candidates, max(top_k, top_k * candidate_multiplier))
+
+
+def search(
+    client: Any,
+    collection: Any,
+    query: str,
+    species: str,
+    top_k: int,
+    *,
+    hybrid_rerank: bool = True,
+    candidate_multiplier: int = DEFAULT_RERANK_CANDIDATE_MULTIPLIER,
+    max_candidates: int = DEFAULT_MAX_RERANK_CANDIDATES,
+) -> list[SearchResult]:
     embedding = embed_texts(client, [query_embedding_text(query)])[0]
-    return query_collection(collection, embedding, species, top_k)
+    candidate_k = rerank_candidate_count(
+        top_k,
+        hybrid_rerank=hybrid_rerank,
+        candidate_multiplier=candidate_multiplier,
+        max_candidates=max_candidates,
+    )
+    candidates = query_collection(collection, embedding, species, candidate_k)
+    if hybrid_rerank:
+        return hybrid_rerank_results(query, candidates, top_k)
+    return candidates[:top_k]
 
 
 def print_results(results: Sequence[SearchResult]) -> None:
@@ -534,7 +647,16 @@ def run_query(args: argparse.Namespace) -> None:
     metadata = collection.metadata or {}
     if metadata.get("embedding_model") != MODEL or metadata.get("embedding_dimension") != DIMENSION:
         raise RagDbError("컬렉션의 임베딩 모델 또는 차원이 현재 검색 설정과 다릅니다.")
-    results = search(openai_client(), collection, args.query, args.species, args.top_k)
+    results = search(
+        openai_client(),
+        collection,
+        args.query,
+        args.species,
+        args.top_k,
+        hybrid_rerank=not args.no_hybrid_rerank,
+        candidate_multiplier=args.candidate_multiplier,
+        max_candidates=args.max_candidates,
+    )
     print_results(results)
 
 
@@ -579,23 +701,50 @@ def score_case(case: dict[str, Any], results: Sequence[SearchResult]) -> tuple[b
     return not failures, failures
 
 
+def expected_document_rank(case: dict[str, Any], results: Sequence[SearchResult]) -> int | None:
+    expected = set(case["expected_document_ids"])
+    for rank, result in enumerate(results, start=1):
+        if result.metadata.get("document_id") in expected:
+            return rank
+    return None
+
+
 def run_evaluate(args: argparse.Namespace) -> None:
     cases = load_jsonl(args.gold)
     validate_gold_cases(cases)
     collection = require_collection(chroma_client(args.db_path), args.collection)
     openai = openai_client()
     passed = 0
+    reciprocal_rank_total = 0.0
+    total_seconds = 0.0
+    mode = "hybrid-rerank" if not args.no_hybrid_rerank else "dense-only"
+    print(f"평가 모드: {mode}")
+    if not args.no_hybrid_rerank:
+        print(
+            "후보 확장: "
+            f"candidate_multiplier={args.candidate_multiplier}, max_candidates={args.max_candidates}"
+        )
     for case in cases:
+        started = time.perf_counter()
         results = search(
             openai,
             collection,
             case["query"],
             case["species"],
             case["top_k"],
+            hybrid_rerank=not args.no_hybrid_rerank,
+            candidate_multiplier=args.candidate_multiplier,
+            max_candidates=args.max_candidates,
         )
+        elapsed = time.perf_counter() - started
+        total_seconds += elapsed
         ok, failures = score_case(case, results)
+        expected_rank = expected_document_rank(case, results)
+        if expected_rank is not None:
+            reciprocal_rank_total += 1.0 / expected_rank
         status = "PASS" if ok else "FAIL"
-        print(f"[{status}] {case['case_id']}: {case['query']}")
+        rank_label = f"rank={expected_rank}" if expected_rank is not None else "rank=miss"
+        print(f"[{status}] {case['case_id']} ({rank_label}, {elapsed * 1000:.0f}ms): {case['query']}")
         if ok:
             passed += 1
         else:
@@ -605,7 +754,14 @@ def run_evaluate(args: argparse.Namespace) -> None:
                     f"  {result.rank}. {result.metadata.get('document_id')} "
                     f"(유사도 {result.similarity:.4f})"
                 )
-    print(f"\n평가 결과: {passed}/{len(cases)} 통과")
+    total = len(cases)
+    recall = passed / total if total else 0.0
+    mrr = reciprocal_rank_total / total if total else 0.0
+    average_latency_ms = (total_seconds / total * 1000) if total else 0.0
+    print(f"\n평가 결과: {passed}/{total} 통과")
+    print(f"Recall@k: {recall:.3f}")
+    print(f"MRR: {mrr:.3f}")
+    print(f"평균 검색 지연시간: {average_latency_ms:.0f}ms/case")
     if passed != len(cases):
         raise RagDbError("골든 질문 평가가 모두 통과하지 못했습니다.")
 
@@ -625,6 +781,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--species", choices=("dog", "cat"))
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
+    parser.add_argument(
+        "--no-hybrid-rerank",
+        action="store_true",
+        help="Show/evaluate raw dense retrieval results without the lightweight hybrid rerank step.",
+    )
+    parser.add_argument(
+        "--candidate-multiplier",
+        type=int,
+        default=DEFAULT_RERANK_CANDIDATE_MULTIPLIER,
+        help="Dense candidate expansion factor used before hybrid rerank.",
+    )
+    parser.add_argument(
+        "--max-candidates",
+        type=int,
+        default=DEFAULT_MAX_RERANK_CANDIDATES,
+        help="Maximum dense candidates fetched before hybrid rerank.",
+    )
     return parser
 
 

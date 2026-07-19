@@ -172,6 +172,11 @@ def _minmax(values: Sequence[float]) -> list[float]:
     return [(value - lo) / (hi - lo) for value in values]
 
 
+def _dense_similarity_scores(chunks: Sequence[RetrievedChunk]) -> list[float]:
+    """Keep dense similarity magnitude so lexical scores can break close calls."""
+    return [max(0.0, min(1.0, chunk.similarity)) for chunk in chunks]
+
+
 def _bm25_scores(query: str, chunks: Sequence[RetrievedChunk]) -> list[float]:
     query_terms = _lexical_terms(query)
     if not query_terms or not chunks:
@@ -214,7 +219,7 @@ def hybrid_rerank(
         raise RagPipelineError("top-k는 1 이상이어야 합니다.")
     if not chunks:
         return []
-    dense_scores = _minmax([chunk.similarity for chunk in chunks])
+    dense_scores = _dense_similarity_scores(chunks)
     lexical_scores = _minmax(_bm25_scores(question, chunks))
     scored = [
         (

@@ -182,6 +182,84 @@ class CollectionTests(unittest.TestCase):
         self.assertNotIn("query_texts", collection.kwargs)
         self.assertEqual(results[0].similarity, 0.8)
 
+    def test_hybrid_rerank_can_promote_lexically_relevant_candidate(self) -> None:
+        candidates = [
+            rag.SearchResult(
+                rank=1,
+                distance=0.05,
+                chunk_id="dense-only",
+                document="general wellness and routine checkup information",
+                metadata={"document_id": "general", "title": "General Care"},
+            ),
+            rag.SearchResult(
+                rank=2,
+                distance=0.20,
+                chunk_id="lexical-match",
+                document="xylitol can cause dangerous hypoglycemia in dogs",
+                metadata={"document_id": "xylitol", "title": "Xylitol Toxicities"},
+            ),
+        ]
+
+        reranked = rag.hybrid_rerank_results("dog xylitol toxicity", candidates, top_k=1)
+
+        self.assertEqual(reranked[0].chunk_id, "lexical-match")
+        self.assertEqual(reranked[0].rank, 1)
+
+    def test_search_fetches_extra_candidates_before_hybrid_rerank(self) -> None:
+        class FakeEmbeddings:
+            def create(self, **_kwargs: object) -> object:
+                return type("EmbeddingResponse", (), {
+                    "data": [type("EmbeddingItem", (), {"embedding": [0.1] * rag.DIMENSION})()]
+                })()
+
+        class FakeClient:
+            embeddings = FakeEmbeddings()
+
+        class FakeCollection:
+            def __init__(self) -> None:
+                self.kwargs = None
+
+            def query(self, **kwargs: object) -> dict[str, object]:
+                self.kwargs = kwargs
+                return {
+                    "ids": [["dense-only", "lexical-match"]],
+                    "documents": [[
+                        "general wellness and routine checkup information",
+                        "xylitol can cause dangerous hypoglycemia in dogs",
+                    ]],
+                    "metadatas": [[
+                        {
+                            "document_id": "general",
+                            "title": "General Care",
+                            "species": ["dog"],
+                            "section_path": ["General Care"],
+                            "canonical_url": "https://www.vet.cornell.edu/general",
+                        },
+                        {
+                            "document_id": "xylitol",
+                            "title": "Xylitol Toxicities",
+                            "species": ["dog"],
+                            "section_path": ["Xylitol Toxicities"],
+                            "canonical_url": "https://www.vet.cornell.edu/xylitol",
+                        },
+                    ]],
+                    "distances": [[0.05, 0.20]],
+                }
+
+        collection = FakeCollection()
+        results = rag.search(
+            FakeClient(),
+            collection,
+            "dog xylitol toxicity",
+            "dog",
+            top_k=1,
+            candidate_multiplier=3,
+            max_candidates=20,
+        )
+
+        self.assertEqual(collection.kwargs["n_results"], 3)
+        self.assertEqual(results[0].chunk_id, "lexical-match")
+
 
 class EvaluationTests(unittest.TestCase):
     def result(self, document_id: str, species: str = "dog") -> object:
@@ -203,6 +281,12 @@ class EvaluationTests(unittest.TestCase):
         passed, failures = rag.score_case(case, [self.result("wanted")])
         self.assertTrue(passed)
         self.assertEqual(failures, [])
+
+    def test_expected_document_rank(self) -> None:
+        case = {"expected_document_ids": ["wanted"], "species": "dog"}
+        results = [self.result("other"), self.result("wanted"), self.result("also-other")]
+        self.assertEqual(rag.expected_document_rank(case, results), 2)
+        self.assertIsNone(rag.expected_document_rank(case, [self.result("other")]))
 
     def test_case_fails_for_wrong_document_or_species(self) -> None:
         case = {"expected_document_ids": ["wanted"], "species": "dog"}

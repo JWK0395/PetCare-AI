@@ -111,8 +111,19 @@ python tools/manage_cornell_rag_db.py query `
   --top-k 5
 ```
 
-이 명령은 ChromaDB dense 검색 결과를 보여준다. 전체 답변 파이프라인의 hybrid rerank까지
-보려면 다음 CLI를 사용한다.
+이 명령은 ChromaDB에서 dense 후보를 넓게 가져온 뒤, 기본적으로 hybrid rerank가 적용된
+최종 top-k를 보여준다. 순수 dense 검색 결과만 비교하고 싶으면 `--no-hybrid-rerank`를
+붙인다.
+
+```powershell
+python tools/manage_cornell_rag_db.py query `
+  --query "강아지가 초콜릿을 먹으면 왜 위험해?" `
+  --species dog `
+  --top-k 5 `
+  --no-hybrid-rerank
+```
+
+답변 생성과 Cornell 출처까지 포함한 전체 파이프라인은 다음 CLI를 사용한다.
 
 ### 2-5. dense 검색 → hybrid rerank → GPT 답변까지 보기
 
@@ -136,14 +147,25 @@ python tools/run_cornell_rag.py `
 가져온 뒤, dense similarity와 BM25 스타일 lexical score를 섞어 최종 top-k를 다시
 정렬하는 deterministic hybrid rerank 방식이다.
 
+평가 기준과 발표용 테스트 절차는 `docs/rag-evaluation-criteria.md`에 정리되어 있다.
+핵심은 검색 품질, 출처 품질, 답변 품질, 속도를 분리해서 보는 것이다.
+
 ### 2-6. 골든 질문 평가
 
 ```powershell
 python tools/manage_cornell_rag_db.py evaluate
 ```
 
-이 평가는 골든 질문의 기대 문서가 top-k 안에 들어오는지 확인한다. 답변 문장 품질을
-완전히 보장하는 테스트는 아니며, 검색 설정이 최소 기준을 통과하는지 보는 smoke test다.
+이 평가는 dense 후보를 넓게 가져온 뒤 hybrid rerank한 최종 top-k 안에 골든 질문의 기대
+문서가 들어오는지 확인한다. 출력에는 `Recall@k`, `MRR`, 평균 검색 지연시간이 포함된다.
+순수 dense baseline과 비교하려면 다음처럼 실행한다.
+
+```powershell
+python tools/manage_cornell_rag_db.py evaluate --no-hybrid-rerank
+```
+
+답변 문장 품질을 완전히 보장하는 테스트는 아니며, 검색 설정이 최소 기준을 통과하는지
+보는 smoke test다.
 
 ## 3. RAG 담당자가 공용 서버 준비하기
 
