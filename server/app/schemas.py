@@ -25,6 +25,34 @@ RISK_LABELS = {
     "emergency": "응급",
 }
 
+#: 위험도의 심각도 순서(낮음 → 높음). 한 대화 안에서 위험도를 비교할 때 쓴다.
+#: 값 자체는 Agent 가 정하지만, "무엇이 더 심각한가" 는 서버가 알아야 한다.
+RISK_ORDER: dict[str, int] = {"normal": 0, "observe": 1, "consult": 2, "emergency": 3}
+
+
+def higher_risk(current: str | None, incoming: str | None) -> str:
+    """둘 중 더 심각한 위험도를 돌려준다(모르는 값은 무시).
+
+    한 대화 안에서 위험도가 **내려가지 않게** 하는 데 쓴다. 이유:
+
+    보호자가 되묻는 질문에 답할 때마다 Agent 는 그 turn 을 다시 평가한다. 그런데
+    "모름" 처럼 정보가 적은 답이 오면 직전에 판단했던 근거가 약해져 위험도가 도로
+    내려간다. 실제로 한 대화에서 consult → normal → emergency → normal 로 널뛰었고,
+    앱 화면은 그때마다 권고 카드와 응급 카드를 오갔다.
+
+    사용자가 관찰한 증상은 사라지지 않았는데 표시만 바뀌는 것이므로, 대화가 이어지는
+    동안에는 **가장 높았던 위험도를 유지**한다. 이는 LangGraph 내부의 `merge_risk`
+    (상향 전용)와 같은 규칙을 세션 수준에도 적용하는 것이다.
+
+    '새 체크' 를 누르면 새 세션이라 다시 normal 부터 시작한다 — 이 유지는 대화
+    하나 안에서만 유효하다.
+    """
+    left = RISK_ORDER.get(str(current or ""), -1)
+    right = RISK_ORDER.get(str(incoming or ""), -1)
+    if right >= left:
+        return str(incoming or "normal")
+    return str(current)
+
 
 # ---------- Auth ----------
 class AuthRequest(BaseModel):
@@ -196,6 +224,11 @@ class TrendItem(BaseModel):
 class AICheckRequest(BaseModel):
     messages: list[ChatMessage]
     session_id: int | None = None  # 이어지는 대화면 기존 세션 id
+    # 앱이 알고 있는 지역명(예: "서울 강남구"). AI 가 실시간 병원 검색어를 만들 때 쓴다.
+    # 서버는 이 값을 해석하지 않고 Agent 로 그대로 넘긴다. 값이 없으면 AI 는 지역을
+    # **추측하지 않고** 병원 검색을 건너뛴다 — 응급 상황에 엉뚱한 지역 병원을
+    # 안내하는 것이 아무것도 안내하지 않는 것보다 위험하기 때문이다.
+    region_name: str | None = None
 
 
 class AgentAction(BaseModel):
@@ -219,6 +252,42 @@ class RagCitation(BaseModel):
     snippet: str = ""
 
 
+class HospitalSuggestion(BaseModel):
+    """AI 가 실시간 검색(Tavily)으로 찾아 적합도를 매긴 병원 1건.
+
+    아래 `HospitalOut`(DB 에 시드된 데모 병원)과는 다른 개념이다. 이쪽은 DB 에
+    저장되지 않은 검색 결과라 id·distance_km 가 없고, 대신 **왜 이 병원인지**
+    (score/matched_reasons)와 **무엇을 전화로 확인해야 하는지**
+    (verification_required)를 함께 전달한다.
+
+    `availability` 기본값이 "전화 확인 필요" 인 이유: 검색 결과만으로 지금 문이
+    열려 있는지 확정할 수 없다. 응급 상황에서 "영업 중"이라고 단정했다가 틀리면
+    보호자가 헛걸음한다.
+
+    **모든 필드에 기본값이 있어야 한다.** 서버는 Agent 응답을 이 스키마로 검증하고
+    실패하면 502 로 답변까지 통째로 버리므로, 일부 값을 못 채운 Agent 때문에
+    대화 자체가 사라지면 안 된다.
+    """
+
+    name: str
+    phone: str | None = None
+    address: str | None = None
+    # 병원 페이지에서 찾은 이메일. 응급 이메일 초안의 수신 주소로 쓴다.
+    # 웹 검색으로 이메일이 나오는 경우는 드물어 대부분 None 이다 — 그때는 앱이
+    # 보호자에게 주소를 직접 입력받는다(초안 자체는 만들어진다).
+    email: str | None = None
+    source_url: str = ""
+    score: int = 0
+    # recommended | possible | low_information — Literal 로 굳히지 않는다.
+    # AI 쪽 분류 값이 늘어날 때마다 서버가 502 를 내면 안 되기 때문.
+    suitability: str = "low_information"
+    matched_reasons: list[str] = Field(default_factory=list)
+    verification_required: list[str] = Field(default_factory=list)
+    emergency_mentioned: bool = False
+    open_24h_mentioned: bool = False
+    availability: str = "전화 확인 필요"
+
+
 class AICheckResponse(BaseModel):
     reply: str
     risk_level: RiskLevel
@@ -228,12 +297,20 @@ class AICheckResponse(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     evidence: str = ""
     followup_question: str | None = None
+    # AI 가 아직 되묻는 중인지. True 면 판정이 끝나지 않은 것이라 앱은 결과 카드를
+    # 그리지 않는다(판정 전 화면에 위험도 뱃지·요약 버튼이 붙는 사고가 있었다).
+    awaiting_more_info: bool = False
+    # 이번 turn 이 새 판정인가(False 면 앞선 판정에 대한 설명·잡담이다).
+    # 앱은 이 값이 False 면 결과 카드를 그리지 않고 대화 말풍선만 보여준다.
+    assessment_turn: bool = True
     can_generate_summary: bool = False
     show_hospitals: bool = False
     transit_guidance: list[str] = Field(default_factory=list)
     # AI 모델 연결용 확장 필드 (mock 은 빈 값)
     actions: list[AgentAction] = Field(default_factory=list)
     citations: list[RagCitation] = Field(default_factory=list)
+    # AI 가 찾은 병원. 비어 있으면 앱은 기존 /api/hospitals(시드 병원)로 대체한다.
+    hospitals: list[HospitalSuggestion] = Field(default_factory=list)
     source: str = "mock"
     session_id: int | None = None
 
@@ -321,7 +398,22 @@ class SummaryCreateRequest(BaseModel):
 
 # ---------- Emergency email ----------
 class EmergencyEmailCreate(BaseModel):
+    """응급 이메일 초안 요청.
+
+    병원은 두 경로로 올 수 있다.
+
+    1. **AI 가 실시간 검색으로 찾은 병원** — 앱이 `hospital_name`/`hospital_email`/
+       `hospital_phone` 을 그대로 보낸다. DB 에 없는 병원이라 id 가 없다.
+    2. **DB 에 등록된 병원** — `hospital_id` 만 보낸다.
+
+    셋 다 비어 있어도 된다. 병원이 정해지지 않아도 초안은 만들어지고, 수신 주소는
+    앱에서 보호자가 입력한다 (`routers/emergency.py` 참고).
+    """
+
     hospital_id: int | None = None
+    hospital_name: str | None = None
+    hospital_email: str | None = None
+    hospital_phone: str | None = None
     symptom_summary: str = ""  # e.g. 호흡곤란 · 청색증
 
 
@@ -330,7 +422,8 @@ class EmergencyEmailOut(BaseModel):
     id: int
     pet_id: int
     hospital_id: int | None
-    to_email: str
+    # 병원 이메일을 못 구한 초안은 None 이다. 앱이 보호자에게 주소를 입력받는다.
+    to_email: str | None
     subject: str
     body: str
     content: dict  # 병원 전달용 요약과 같은 4섹션 구조

@@ -49,14 +49,11 @@ class Settings(BaseSettings):
     auth_rate_limit_window_seconds: int = 300
 
     # --- 데모 데이터 -----------------------------------------------------------
+    # (DEMO_PASSWORD 는 제거됨 — mock 이 하드코딩 예시 응답을 더 이상 만들지 않아
+    #  "예시를 잠금 해제하는 키워드" 자체가 필요 없어졌다. services/agent_client.py 참고)
     seed_demo_data: bool = True
     demo_user_email: str = "demo@petcare.ai"
     demo_user_password: str = "demo1234"
-
-    # 데모 비밀번호 — mock 모드에서 하드코딩된 디자인 예시 응답을 "잠금 해제"하는 키워드.
-    # 입력(일기/증상)에 이 값이 포함될 때만 예시 결과가 나온다.
-    # 빈 문자열이면 항상 예시 응답(하위 호환). 실제 AI(agent_mode=http) 사용 시에는 무시된다.
-    demo_password: str = "demo"
 
     # --- 검증 -----------------------------------------------------------------
     @field_validator("database_url")

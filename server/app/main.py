@@ -15,12 +15,16 @@ from .routers import (
     records,
     summaries,
 )
+from .services.schema_fix import apply_schema_fixes
 from .services.seed import seed_if_empty
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # create_all 은 이미 있는 테이블의 제약을 갱신하지 않는다. 예전 .db 파일이
+    # 새 모델과 어긋나는 지점을 여기서 완화한다(데이터는 보존).
+    apply_schema_fixes(engine)
     if settings.seed_demo_data:
         db = SessionLocal()
         try:

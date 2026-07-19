@@ -4,13 +4,14 @@ Agent(Safety/Context/Trend/RAG/Summary)는 별도로 구현된다(ai/ 폴더 참
 이 모듈은 서버와 Agent 사이의 "연결"만 담당한다.
 
 - AGENT_MODE=http : 외부 Agent 서비스로 HTTP 요청을 전달한다. (계약: ai/README.md)
-- AGENT_MODE=mock : Agent 없이도 앱이 동작하도록 내장 규칙 기반 응답을 돌려준다.
+- AGENT_MODE=mock : Agent 가 없을 때 쓰는 **미연결 응답**. 판단·추출을 하지 않고
+  "AI 가 연결되지 않았다" 는 사실만 돌려준다 (`MockAgentClient` docstring 참고).
 
 서버는 항상 동일한 payload(pet / messages / context)를 만들어 전달하므로,
 실제 Agent는 이 계약만 맞추면 그대로 교체된다.
 
-DB 스펙(daily_entries)에 따라 기록은 모두 텍스트 상태값이다. mock 은 정규식 기반으로
-텍스트를 구조화하며, 수치 기반 기준선/추이는 계산하지 않는다(AI 가 텍스트로 판단).
+DB 스펙(daily_entries)에 따라 기록은 모두 텍스트 상태값이다. 수치 기반 기준선/추이는
+서버가 계산하지 않는다(AI 가 텍스트로 판단한다).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, timedelta
-from typing import Any, Protocol
+from typing import Protocol
 
 import httpx
 from fastapi import HTTPException
@@ -41,7 +42,14 @@ class AgentClient(Protocol):
 
     def diagnosis_extract(self, pet: dict, file_name: str, file_text: str) -> dict: ...
 
-    def health_check(self, pet: dict, messages: list[dict], context: dict) -> dict: ...
+    def health_check(
+        self,
+        pet: dict,
+        messages: list[dict],
+        context: dict,
+        region_name: str | None = None,
+        conversation_id: str | None = None,
+    ) -> dict: ...
 
     def generate_summary(
         self, pet: dict, risk_level: str, extra_note: str, context: dict
@@ -72,7 +80,8 @@ class HttpAgentClient:
             raise HTTPException(
                 status_code=502,
                 detail=f"Agent 서비스에 연결할 수 없습니다 ({settings.agent_base_url}{path}). "
-                "AGENT_MODE=mock 으로 바꾸면 내장 응답으로 동작합니다.",
+                "ai 서비스가 실행 중인지 확인하세요 (AGENT_MODE=mock 으로 바꾸면 "
+                "분석 없이 '미연결' 안내만 표시됩니다).",
             )
         except ValueError as exc:  # res.json() — 200 인데 본문이 JSON 이 아닌 경우
             logger.error("Agent returned non-JSON body: %s %s", path, exc)
@@ -101,9 +110,34 @@ class HttpAgentClient:
             {"pet": pet, "file_name": file_name, "file_text": file_text},
         )
 
-    def health_check(self, pet: dict, messages: list[dict], context: dict) -> dict:
+    def health_check(
+        self,
+        pet: dict,
+        messages: list[dict],
+        context: dict,
+        region_name: str | None = None,
+        conversation_id: str | None = None,
+    ) -> dict:
+        """지역명과 대화 식별자를 함께 보낸다.
+
+        `region_name` — Agent 가 병원 검색어를 만들려면 지역이 필요하다. None 이어도
+        키는 넣는다. 키를 빼면 Agent 쪽에서 "안 보낸 것"과 "모르는 것"을 구분할 수
+        없고, 지역을 임의로 추측하게 될 여지가 생긴다.
+
+        `conversation_id` — Agent 의 LangGraph 가 되묻기(interrupt)를 재개하려면
+        같은 대화를 가리키는 키가 필요하다(명세 29절). 서버의 `ai_sessions.id` 를
+        그대로 쓴다. 이 값이 없으면 Agent 는 매 요청을 새 대화로 처리하고, 되묻기
+        라운드 제한이 영원히 발동하지 않아 같은 질문을 반복한다.
+        """
         return self._post(
-            HEALTH_CHECK_PATH, {"pet": pet, "messages": messages, "context": context}
+            HEALTH_CHECK_PATH,
+            {
+                "pet": pet,
+                "messages": messages,
+                "context": context,
+                "region_name": region_name,
+                "conversation_id": conversation_id,
+            },
         )
 
     def generate_summary(
@@ -120,47 +154,30 @@ class HttpAgentClient:
         )
 
 
-# ---------------------------------------------------------------------------
-# Mock 모드 — 규칙 기반 (Agent 없이 앱 전체 흐름 확인용)
-# ---------------------------------------------------------------------------
-EMERGENCY_KEYWORDS = [
-    "호흡곤란", "숨을 가쁘", "가쁘게", "헐떡", "숨을 잘 못", "숨쉬기 힘들",
-    "청색", "파래", "파랗", "보라색",
-    "경련", "발작", "의식이 없", "의식을 잃", "쓰러", "축 늘어",
-    "중독", "쥐약", "부동액", "초콜릿을 먹", "포도를 먹", "양파를 먹", "자일리톨",
-    "주워 먹", "침을 많이 흘리", "피를 토", "토혈", "하혈",
-]
+#: mock 모드에서 사용자에게 보여줄 유일한 문구. 상태를 판정한 척하지 않고
+#: 무엇을 해야 연결되는지까지 알려 준다.
+NOT_CONNECTED_REPLY = (
+    "AI 가 연결되지 않아 상태 분석을 할 수 없어요. "
+    "server/.env 의 AGENT_MODE 를 http 로 설정하고 ai 서비스를 실행해 주세요."
+)
 
-TRANSIT_GUIDANCE = ["기도 확보", "최대한 안정 유지", "음식과 물은 주지 않기"]
-EVIDENCE_LINE = "WSAVA 보호자 가이드 2024 v2 · 최근 30일 기록"
-FOLLOWUP_QUESTION = "지난 24시간 동안 구토나 설사가 있었나요?"
 
+# ---------------------------------------------------------------------------
+# 병원 전달용 요약 4섹션 — 서버가 DB 기록으로 직접 만든다 (mock/http 공용)
+# ---------------------------------------------------------------------------
+#: daily_entries 텍스트 항목 7개 (schemas.RecordFields 와 같은 키 집합).
+RECORD_FIELD_KEYS: tuple[str, ...] = (
+    "food", "water", "activity", "symptom", "stool", "vomit", "notes",
+)
+
+# 저장된 기록 텍스트에서 상태 변화를 읽는 패턴. **판단이 아니라 요약**이다 —
+# 보호자가 직접 저장한 문장을 그대로 훑어 무엇이 적혀 있었는지만 모은다.
+FOOD_LOW_RE = re.compile(r"감소|남김|적게|거의")
+ACTIVITY_LOW_RE = re.compile(r"짧|거부|감소")
 LETHARGY_RE = re.compile(r"축 처|기운이 없|기운 없|무기력|축 늘어|처져|기력")
-VOMIT_RE = re.compile(r"구토|토를 하|토했|토를 했|토함|구역질|노란 토")
-DIARRHEA_RE = re.compile(r"설사|묽은 변|무른 변")
-
-
-def _demo_gate(text: str) -> tuple[bool, str]:
-    """데모 비밀번호 게이트.
-
-    - demo_password 가 비어 있으면 항상 활성(하위 호환).
-    - 입력에 비밀번호가 포함되면 활성 + 비밀번호를 제거한 텍스트를 돌려준다.
-    - 그 외에는 비활성 → 하드코딩 예시 응답을 내지 않는다.
-    """
-    pw = (settings.demo_password or "").strip()
-    if not pw:
-        return True, text
-    if pw.lower() in (text or "").lower():
-        cleaned = re.sub(re.escape(pw), "", text, flags=re.IGNORECASE).strip()
-        return True, cleaned
-    return False, text
-
-
-def _time_of_day(text: str) -> str:
-    for word in ["새벽", "아침", "오전", "점심", "오후", "저녁", "밤"]:
-        if word in text:
-            return word
-    return ""
+DIARRHEA_STOOL_RE = re.compile(r"설사|묽은")
+#: 구토 칸이 "비어 있음/없음" 인 값 — 이 값들은 구토 관찰로 세지 않는다.
+NO_VOMIT_VALUES = frozenset({"", "없음"})
 
 
 def build_summary_content(
@@ -170,6 +187,14 @@ def build_summary_content(
 
     요약(summary) 생성과 응급 이메일이 공용으로 사용한다. 기록이 모두 텍스트이므로
     최근 기록의 상태값을 스캔해 위험 징후·주호소·변화를 구성한다.
+
+    ## 빈 값을 문구로 채우지 않는 이유
+
+    예전에는 값이 비면 "보호자 관찰 변화" · "특이 변화 관찰되지 않음" · "기록 부족"
+    같은 기본 문구를 넣었다. 이 문서는 **병원으로 전달된다.** 수의사가 읽을 때
+    "특이 변화 관찰되지 않음" 은 '보호자가 관찰했고 변화가 없었다' 는 사실 주장이
+    되는데, 실제로는 그 기간에 기록 자체가 없었을 뿐이다. 그래서 없는 값은 빈
+    문자열로 남기고, 채워진 칸은 전부 DB 에 실제로 저장된 기록에서만 나오게 한다.
     """
     records: list[dict] = context.get("records", [])
     window_days = context.get("window_days", 30)
@@ -197,13 +222,11 @@ def build_summary_content(
         "emergency": "응급 징후 가능성",
     }.get(risk_level, "관찰 권장")
 
-    food_low = any(re.search(r"감소|남김|적게|거의", r.get("food", "")) for r in recent)
+    food_low = any(FOOD_LOW_RE.search(r.get("food", "")) for r in recent)
     lethargy = any(LETHARGY_RE.search(r.get("symptom", "")) for r in recent)
-    vomiting = any(r.get("vomit") and r["vomit"] not in ("", "없음") for r in recent)
-    diarrhea = any(
-        "설사" in r.get("stool", "") or "묽은" in r.get("stool", "") for r in recent
-    )
-    activity_low = any(re.search(r"짧|거부|감소", r.get("activity", "")) for r in recent)
+    vomiting = any((r.get("vomit") or "") not in NO_VOMIT_VALUES for r in recent)
+    diarrhea = any(DIARRHEA_STOOL_RE.search(r.get("stool", "")) for r in recent)
+    activity_low = any(ACTIVITY_LOW_RE.search(r.get("activity", "")) for r in recent)
 
     signs: list[str] = []
     if food_low:
@@ -217,7 +240,7 @@ def build_summary_content(
     if activity_low:
         signs.append("활동 감소")
 
-    # 4. 주호소 및 주요 변화
+    # 4. 주호소 및 주요 변화 — 값이 없으면 빈 문자열로 둔다(위 docstring 참고).
     complaints = []
     if food_low:
         complaints.append("식욕 감소")
@@ -225,19 +248,17 @@ def build_summary_content(
         complaints.append("기력 저하")
     if vomiting:
         complaints.append("구토")
-    chief = " · ".join(complaints) if complaints else "보호자 관찰 변화"
+    chief = " · ".join(complaints)
 
     change_parts = []
-    food_low_days = sum(
-        1 for r in recent if re.search(r"감소|남김|적게|거의", r.get("food", ""))
-    )
+    food_low_days = sum(1 for r in recent if FOOD_LOW_RE.search(r.get("food", "")))
     if food_low_days:
         change_parts.append(f"최근 {food_low_days}일 식사량 감소")
     if activity_low:
         change_parts.append("활동 감소")
     if vomiting:
         change_parts.append("구토 발생")
-    major_changes = " · ".join(change_parts) or "특이 변화 관찰되지 않음"
+    major_changes = " · ".join(change_parts)
 
     progress_parts = []
     foods = [r.get("food", "") for r in recent if r.get("food")]
@@ -247,13 +268,11 @@ def build_summary_content(
     if acts:
         progress_parts.append(f"활동: {acts[-1]}")
     vomits = [
-        r.get("vomit", "")
-        for r in recent
-        if r.get("vomit") and r["vomit"] not in ("", "없음")
+        r.get("vomit", "") for r in recent if (r.get("vomit") or "") not in NO_VOMIT_VALUES
     ]
     if vomits:
         progress_parts.append(f"구토: {vomits[-1]}")
-    progress = " · ".join(progress_parts) or "기록 부족"
+    progress = " · ".join(progress_parts)
 
     return {
         # 1. 문서 정보
@@ -266,8 +285,10 @@ def build_summary_content(
         "sex_neuter": sex_neuter,
         "age_label": pet.get("age_label", ""),
         "weight": weight,
-        "medications": pet.get("medications", "") or "없음",
-        "allergies": pet.get("allergies", "") or "없음",
+        # 프로필에 입력하지 않은 항목을 "없음" 으로 바꾸지 않는다 — 병원이 읽을 때
+        # '복용약 없음' 은 확인된 사실로 보이지만 실제로는 미입력일 뿐이다.
+        "medications": pet.get("medications", ""),
+        "allergies": pet.get("allergies", ""),
         # 3. 상태
         "risk_label": risk_label,
         "risk_signs": signs,
@@ -280,347 +301,92 @@ def build_summary_content(
 
 
 class MockAgentClient:
-    source = "mock"
+    """Agent 를 붙이지 않고 서버만 띄웠을 때 쓰는 **최소** 클라이언트.
+
+    이 클래스는 아무것도 판단하지 않는다. 모든 응답은 "AI 가 연결되지 않았다" 는
+    사실만 전달하고 값 자리는 비워 둔다.
+
+    ## 왜 예시 응답을 전부 지웠나
+
+    예전 mock 은 화면이 비어 보이지 않도록 하드코딩된 값을 돌려줬다 — 고정 근거 한 줄
+    ("WSAVA 보호자 가이드 …"), 고정 추가 질문, 고정 이동 안내 3개, `demo-normal` /
+    `demo-consult` / `demo-emergency` 강제 상태, 그리고 정규식으로 일기·진단서에서
+    지어낸 "사료 반쯤 남김 · 평소보다 감소" 같은 값들이다.
+
+    문제는 화면 어디에도 "이건 예시입니다" 가 없다는 것이다. 보호자는 그 값을 AI
+    판독 결과로 읽고, 일기 추출 결과는 확인 버튼 한 번으로 **그대로 DB 에 저장**된다.
+    존재하지 않는 근거와 아무도 읽지 않은 기록이 진짜 건강 기록으로 남는 셈이다.
+    빈 화면은 불편할 뿐이지만 가짜 값은 잘못된 판단을 만든다. 그래서 값을 만들지
+    않고 미연결 사실만 알린다.
+
+    실제 분석은 `AGENT_MODE=http` + ai 서비스(LangGraph)가 담당한다.
+    """
+
+    #: 응답 출처 표시 — 앱·로그에서 "실제 AI 결과가 아님" 을 구분할 수 있어야 한다.
+    source = "mock-not-connected"
 
     # ---- 일기 구조화 -------------------------------------------------------
     def diary_extract(self, pet: dict, text: str, record_date: str, context: dict) -> dict:
-        empty = {
-            "food": "", "water": "", "activity": "",
-            "symptom": "", "stool": "", "vomit": "", "notes": "",
+        """항상 빈 7항목을 돌려준다(계약 유지, 값 없음).
+
+        추출 결과는 보호자 확인 후 daily_entries 에 저장되므로, 여기서 지어낸 값은
+        곧바로 영구 기록이 된다. 그래서 추측하지 않는다.
+        """
+        return {
+            "items": [],
+            "fields": {key: "" for key in RECORD_FIELD_KEYS},
+            "source": self.source,
         }
-        active, text = _demo_gate(text)
-        if not active:
-            # 실제 AI 연결 전에는 임의 입력에 대해 가짜 추출 결과를 내지 않는다.
-            return {"items": [], "fields": dict(empty), "source": self.source}
-
-        fields: dict[str, Any] = dict(empty)
-        items: list[dict] = []
-
-        # 식사
-        gram = re.search(r"(\d+(?:\.\d+)?)\s*(?:g|그램|그람)", text)
-        if re.search(r"(다 먹|전부 먹|완식|남기지 않)", text):
-            fields["food"] = "사료 잘 먹음"
-        elif re.search(r"(반쯤 남|절반|반 정도 남|반만 먹|반쯤 먹)", text):
-            fields["food"] = "사료 반쯤 남김 · 평소보다 감소"
-        elif re.search(r"(거의 안 먹|거의 먹지 않|입도 대지 않)", text):
-            fields["food"] = "거의 먹지 않음"
-        elif re.search(r"(안 먹|먹지 않)", text):
-            fields["food"] = "먹지 않음"
-        elif re.search(r"(적게 먹|평소보다 적|많이 남)", text):
-            fields["food"] = "평소보다 적게 먹음"
-        if gram:
-            g = f"사료 {round(float(gram.group(1)))}g"
-            fields["food"] = f"{g} · {fields['food']}" if fields["food"] else g
-        if fields["food"]:
-            items.append({"category": "식사", "value": fields["food"], "field": "food"})
-
-        # 음수
-        if re.search(r"물.{0,6}(잘 마|평소|비슷)", text):
-            fields["water"] = "정상 범위"
-        elif re.search(r"물.{0,10}(많이|빨리 비)", text):
-            fields["water"] = "평소보다 많음"
-        elif re.search(r"물.{0,10}(거의 안|안 마|조금 마)", text):
-            fields["water"] = "평소보다 적음"
-        if fields["water"]:
-            items.append({"category": "음수", "value": fields["water"], "field": "water"})
-
-        # 활동
-        walk = re.search(r"산책.{0,10}?(\d+)\s*분", text)
-        if walk:
-            minutes = int(walk.group(1))
-            note = f"산책 {minutes}분"
-            if re.search(r"(걷기 싫|평소보다 짧|짧게)", text) or minutes < 25:
-                note += " · 평소보다 짧음"
-            fields["activity"] = note
-        elif re.search(r"산책.{0,8}(안 |않|거부|싫어)", text) or re.search(
-            r"(하루 종일 누워|계속 누워|산책은 하지 않)", text
-        ):
-            fields["activity"] = "산책 거부 · 활동 감소"
-        elif re.search(r"걷기 싫어", text):
-            fields["activity"] = "걷기 싫어함 · 활동 감소"
-        if fields["activity"]:
-            items.append({"category": "활동", "value": fields["activity"], "field": "activity"})
-
-        # 구토
-        if VOMIT_RE.search(text) and not re.search(r"구토.{0,4}(없|안 했)", text):
-            m = re.search(r"(\d+)\s*(?:회|번)", text)
-            count = m.group(1) if m else "1"
-            color = "노란색 " if re.search(r"노란|노랑", text) else ""
-            when = _time_of_day(text)
-            fields["vomit"] = " · ".join(
-                x for x in [f"{color}구토 {count}회", when] if x
-            )
-        elif re.search(r"구토.{0,4}(없|안 했)|토하지 않", text):
-            fields["vomit"] = "없음"
-        if fields["vomit"]:
-            items.append({"category": "구토", "value": fields["vomit"], "field": "vomit"})
-
-        # 증상 (기력 저하 / 절뚝거림)
-        symptoms: list[str] = []
-        if LETHARGY_RE.search(text):
-            symptoms.append("기력 저하")
-        if re.search(r"절뚝|다리를 (들|절|드는)", text):
-            symptoms.append("절뚝거림")
-        if symptoms:
-            fields["symptom"] = " · ".join(symptoms)
-            items.append({"category": "증상", "value": fields["symptom"], "field": "symptom"})
-
-        # 배변 (설사 포함)
-        if DIARRHEA_RE.search(text) and not re.search(r"설사.{0,4}(없|안 했)", text):
-            fields["stool"] = "묽은 변 · 설사"
-        elif re.search(r"(정상 변|배변은 정상|배변도 정상|배변은 평소)", text):
-            fields["stool"] = "정상"
-        elif re.search(r"(배변을 하지 않|배변 없|배변은 아직)", text):
-            fields["stool"] = "배변 없음"
-        if fields["stool"]:
-            items.append({"category": "배변", "value": fields["stool"], "field": "stool"})
-
-        return {"items": items, "fields": fields, "source": self.source}
 
     # ---- 진단서 구조화 -----------------------------------------------------
     def diagnosis_extract(self, pet: dict, file_name: str, file_text: str) -> dict:
-        fields = {"date": None, "hospital": "", "diagnosis": "", "content": ""}
-        # 진단서 추출은 업로드한 실제 문서를 파싱하므로 데모 게이트를 두지 않는다.
-        text = file_text or ""
+        """항상 빈 진단서 필드를 돌려준다(라벨 정규식 파싱 제거).
 
-        def label(*labels: str) -> str:
-            for lab in labels:
-                m = re.search(rf"{lab}\s*[:：]\s*([^\n]+)", text)
-                if m:
-                    return m.group(1).strip()
-            return ""
+        `items_read=0` 이면 앱은 "읽은 항목 없음" 으로 표시하고 보호자가 직접
+        입력하게 된다 — 잘못 읽은 진단명을 보여 주는 것보다 안전하다.
+        """
+        return {
+            "fields": {"date": None, "hospital": "", "diagnosis": "", "content": ""},
+            "items_read": 0,
+            "source": self.source,
+        }
 
-        # 병원 — 라벨 우선, 없으면 '○○동물병원' 패턴
-        fields["hospital"] = label(r"발급\s*병원", "병원")
-        if not fields["hospital"]:
-            hm = re.search(
-                r"([가-힣A-Za-z0-9]+\s*동물(?:병원|의료센터|클리닉))",
-                file_name + " " + text,
-            )
-            if hm:
-                fields["hospital"] = hm.group(1).strip()
+    # ---- AI 상태 체크 ------------------------------------------------------
+    def health_check(
+        self,
+        pet: dict,
+        messages: list[dict],
+        context: dict,
+        region_name: str | None = None,
+        conversation_id: str | None = None,
+    ) -> dict:
+        """위험도를 판정하지 않고 미연결 사실만 알린다.
 
-        # 날짜 — 라벨 값 또는 본문에서 YYYY-MM-DD 파싱, 없으면 파일명(_MMDD)
-        date_src = label("발급일", r"발급\s*연월일", "날짜") or text
-        dm = re.search(r"(20\d{2})\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})", date_src)
-        if dm:
-            y, mo, d = (int(g) for g in dm.groups())
-            fields["date"] = f"{y:04d}-{mo:02d}-{d:02d}"
-        else:
-            mmdd = re.search(r"_(\d{2})(\d{2})(?:\.|_|$)", file_name)
-            if mmdd:
-                today = date.today()
-                fields["date"] = (
-                    f"{today.year:04d}-{int(mmdd.group(1)):02d}-{int(mmdd.group(2)):02d}"
-                )
+        `region_name`·`conversation_id` 는 쓰지 않지만 **시그니처는 맞춰 둔다** —
+        라우터가 두 클라이언트를 같은 방식으로 호출하므로, 여기서 빠지면 mock
+        모드에서만 TypeError 가 난다(실제로 그렇게 깨졌다).
 
-        # 진단명
-        fields["diagnosis"] = label("진단명", "병명", r"최종\s*진단")
+        `region_name` 은 계약을 맞추려고 받기만 한다 — mock 은 병원을 검색하지 않으므로
+        `hospitals` 는 항상 비어 있다(없는 병원을 지어내면 보호자가 실제로 전화한다).
 
-        # 진단 내용 — 기타사항/소견(여러 줄) + 처방·몸무게를 함께 서술로 담는다.
-        prescription = label("처방", "투약", "치료명칭", "치료")
-        weight = label("몸무게", "체중")
-        cm = re.search(
-            r"(?:기타사항|소견|진단\s*내용|임상\s*소견)\s*[:：]\s*(.+?)(?:\n\s*\d+\s*[.)]|\Z)",
-            text,
-            re.DOTALL,
-        )
-        parts: list[str] = []
-        if cm:
-            parts.append(re.sub(r"\s+", " ", cm.group(1)).strip())
-        elif fields["diagnosis"]:
-            parts.append(f"{fields['diagnosis']} 소견")
-        if prescription:
-            parts.append(f"처방: {prescription}")
-        if weight:
-            wm = re.search(r"(\d+(?:\.\d+)?)", weight)
-            if wm:
-                parts.append(f"체중 {wm.group(1)}kg")
-        fields["content"] = " · ".join(parts)
-
-        items_read = sum(1 for v in fields.values() if v not in ("", None))
-        return {"fields": fields, "items_read": items_read, "source": self.source}
-
-    def _forced_state(self, state: str, name: str) -> dict:
-        """디자인 확인용 강제 상태 응답 (demo-normal/observe/consult/emergency)."""
-        base = {
+        risk_level 을 `normal` 로 두는 이유: 분석을 하지 않았으니 위험을 올릴 근거도
+        없다. 대신 reply 로 "분석할 수 없다" 를 분명히 말하고, 근거·추가질문·이동
+        안내·요약 버튼은 모두 비활성으로 둔다.
+        """
+        return {
+            "reply": NOT_CONNECTED_REPLY,
+            "risk_level": "normal",
             "trend_summary": "",
             "trends": [],
             "reasons": [],
-            "evidence": EVIDENCE_LINE,
+            "evidence": "",
             "followup_question": None,
             "can_generate_summary": False,
             "show_hospitals": False,
             "transit_guidance": [],
-            "source": self.source,
-        }
-        if state == "emergency":
-            return {
-                **base,
-                "reply": "응급 신호가 의심됩니다. 지금 바로 가까운 24시 동물병원에 연락하세요. "
-                f"이동 중에는 {' · '.join(TRANSIT_GUIDANCE)}를 지켜주세요.",
-                "risk_level": "emergency",
-                "reasons": ["응급 규칙(호흡곤란 · 청색증 · 경련 · 중독 등)에 해당하는 표현 감지"],
-                "can_generate_summary": True,
-                "show_hospitals": True,
-                "transit_guidance": TRANSIT_GUIDANCE,
-            }
-        if state == "consult":
-            return {
-                **base,
-                "reply": "오늘 안에 병원 상담을 권해요",
-                "risk_level": "consult",
-                "trend_summary": "식사 감소 · 기력 저하 · 구토 관찰",
-                "reasons": [
-                    "식사량이 최근 3일 연속 평소보다 줄어든 기록",
-                    "기력 저하 + 구토 동반 — 복합 신호",
-                ],
-                "can_generate_summary": True,
-            }
-        return {
-            **base,
-            "reply": f"최근 30일 기록 기준으로 {name}는 평소 범위 안에 있어요. "
-            "변화가 느껴지면 언제든 기록해 주세요.",
-            "risk_level": "normal",
-        }
-
-    # ---- AI 상태 체크 (Safety → 텍스트 기록 판단) --------------------------
-    def health_check(self, pet: dict, messages: list[dict], context: dict) -> dict:
-        user_messages = [m["content"] for m in messages if m["role"] == "user"]
-        all_user_text = " ".join(user_messages)
-        name = pet.get("name", "아이")
-
-        # 디자인 확인용 강제 상태: 마지막 메시지에 demo-normal / demo-consult /
-        # demo-emergency 가 있으면 해당 상태 응답을 바로 낸다. (AI 체크는 3상태만)
-        last_user = user_messages[-1].lower() if user_messages else ""
-        for state in ("emergency", "consult", "normal"):
-            if f"demo-{state}" in last_user or f"demo {state}" in last_user:
-                return self._forced_state(state, name)
-
-        # 데모 게이트: 비밀번호가 없으면 예시 분석 대신 안내만 한다.
-        active, cleaned = _demo_gate(all_user_text)
-        if not active:
-            return {
-                "reply": "지금은 데모 준비 상태예요. AI 모델을 연결하면 최근 30일 기록과 "
-                "RAG 지식을 바탕으로 상태를 분석해 드려요. "
-                f"(디자인 예시를 보려면 입력에 '{settings.demo_password}'를 포함해 주세요.)",
-                "risk_level": "normal",
-                "trend_summary": "",
-                "trends": [],
-                "reasons": [],
-                "evidence": "",
-                "followup_question": None,
-                "can_generate_summary": False,
-                "show_hospitals": False,
-                "transit_guidance": [],
-                "source": self.source,
-            }
-        all_user_text = cleaned
-
-        # 1) Safety — 응급 신호 우선
-        if any(k in all_user_text for k in EMERGENCY_KEYWORDS):
-            return {
-                "reply": f"응급 신호가 의심됩니다. 지금 바로 가까운 24시 동물병원에 연락하세요. "
-                f"이동 중에는 {' · '.join(TRANSIT_GUIDANCE)}를 지켜주세요.",
-                "risk_level": "emergency",
-                "trend_summary": "",
-                "trends": [],
-                "reasons": ["응급 규칙(호흡곤란 · 청색증 · 경련 · 중독 등)에 해당하는 표현 감지"],
-                "evidence": EVIDENCE_LINE,
-                "followup_question": None,
-                "can_generate_summary": True,
-                "show_hospitals": True,
-                "transit_guidance": TRANSIT_GUIDANCE,
-                "source": self.source,
-            }
-
-        # 2) 최근 기록(텍스트)에서 변화 신호 요약
-        records = context.get("records", [])
-        recent = records[-3:]
-        food_low_days = sum(
-            1 for r in recent if re.search(r"감소|남김|적게|거의", r.get("food", ""))
-        )
-        vomit_days = sum(
-            1 for r in recent if r.get("vomit") and r["vomit"] not in ("", "없음")
-        )
-        record_lethargy = any(LETHARGY_RE.search(r.get("symptom", "")) for r in recent)
-
-        trend_parts: list[str] = []
-        trends: list[dict] = []
-        if food_low_days:
-            trend_parts.append(f"식사 감소 {food_low_days}일")
-            trends.append(
-                {"metric": "식사", "change_pct": None, "note": f"최근 {food_low_days}일 식사 감소 기록"}
-            )
-        if vomit_days:
-            trend_parts.append("구토 관찰")
-            trends.append({"metric": "구토", "change_pct": None, "note": f"구토 {vomit_days}일"})
-        if record_lethargy:
-            trend_parts.append("기력 저하")
-        trend_summary = " · ".join(trend_parts)
-
-        mentioned_vomit = bool(VOMIT_RE.search(all_user_text))
-        mentioned_diarrhea = bool(DIARRHEA_RE.search(all_user_text))
-        lethargy = bool(LETHARGY_RE.search(all_user_text)) or record_lethargy
-
-        # 3) 정보가 부족하면 추가 질문 (첫 턴 & 구토/설사 언급 없음) — 상태는 normal
-        if len(user_messages) <= 1 and not (mentioned_vomit or mentioned_diarrhea):
-            reply = "기록을 확인했어요. "
-            if trend_summary:
-                reply += f"최근 기록에서 변화가 보여요 ({trend_summary}). "
-            reply += "몇 가지만 더 확인할게요."
-            return {
-                "reply": reply,
-                "risk_level": "normal",
-                "trend_summary": trend_summary,
-                "trends": trends,
-                "reasons": [],
-                "evidence": "",
-                "followup_question": FOLLOWUP_QUESTION,
-                "can_generate_summary": False,
-                "show_hospitals": False,
-                "transit_guidance": [],
-                "source": self.source,
-            }
-
-        # 4) 최종 판단 — normal / consult 만 (observe 없음)
-        reasons: list[str] = []
-        if food_low_days >= 3:
-            reasons.append("식사량이 최근 3일 연속 평소보다 줄어든 기록")
-        elif food_low_days >= 1:
-            reasons.append("최근 식사량 감소 기록")
-        if lethargy and (mentioned_vomit or vomit_days):
-            reasons.append("기력 저하 + 구토 동반 — 복합 신호")
-        elif mentioned_vomit and mentioned_diarrhea:
-            reasons.append("구토 + 설사 동반 — 복합 신호")
-
-        has_signal = bool(reasons) or mentioned_vomit or mentioned_diarrhea or lethargy or trend_summary
-        if has_signal:
-            return {
-                "reply": "오늘 안에 병원 상담을 권해요",
-                "risk_level": "consult",
-                "trend_summary": trend_summary,
-                "trends": trends,
-                "reasons": reasons or ["최근 기록·증상에서 변화 관찰"],
-                "evidence": EVIDENCE_LINE,
-                "followup_question": None,
-                "can_generate_summary": True,
-                "show_hospitals": False,
-                "transit_guidance": [],
-                "source": self.source,
-            }
-
-        return {
-            "reply": f"최근 30일 기록 기준으로 {name}는 평소 범위 안에 있어요. 변화가 느껴지면 언제든 기록해 주세요.",
-            "risk_level": "normal",
-            "trend_summary": trend_summary,
-            "trends": trends,
-            "reasons": [],
-            "evidence": EVIDENCE_LINE,
-            "followup_question": None,
-            "can_generate_summary": False,
-            "show_hospitals": False,
-            "transit_guidance": [],
+            "actions": [],
+            "citations": [],
+            "hospitals": [],
             "source": self.source,
         }
 
@@ -628,6 +394,11 @@ class MockAgentClient:
     def generate_summary(
         self, pet: dict, risk_level: str, extra_note: str, context: dict
     ) -> dict:
+        """DB 에 저장된 프로필·기록만으로 4섹션을 채운다.
+
+        4섹션 키는 전부 채우되(앱·PDF 렌더링 계약), 값은 실제 데이터에서 온 것만
+        담는다. 없는 값은 빈 문자열이다 — `build_summary_content` 참고.
+        """
         return {
             "content": build_summary_content(pet, risk_level, extra_note, context),
             "source": self.source,

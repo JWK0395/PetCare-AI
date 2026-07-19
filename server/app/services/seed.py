@@ -4,8 +4,18 @@
 - 콩이: 말티즈, 2021-09-14생, 수컷(중성화), 5.08kg, 슬개골 탈구 2기
 - 최근 30일 일일 기록(daily_entries): 평소엔 사료를 잘 먹고 산책 30분대,
   마지막 3일은 식사 감소 + 활동 감소, 어제 노란 구토 1회 (모두 텍스트 상태값)
-- 병원: 24시 온누리동물의료센터 · 센트럴동물응급의료센터
 - 진단서: 행복한동물병원 · 슬개골 탈구 2기
+
+## 병원을 시드하지 않는 이유
+
+예전에는 여기서 가짜 응급 병원 2곳(이름·전화번호·이메일 전부 지어낸 값)을 넣었다.
+응급 화면은 그 목록을 그대로 "주변 24시 동물병원" 으로 보여줬고, 보호자가 실제로
+전화를 걸면 존재하지 않는 번호였다. **응급 상황에서 가짜 연락처는 안내가 없는 것보다
+위험하다.** 지금은 AI(LangGraph + Tavily)가 실시간으로 검색한 병원을 앱까지
+전달하므로 시드가 필요 없다.
+
+`hospitals` 테이블·모델·`GET /api/hospitals` 는 그대로 둔다 — 사용자가 직접 다니는
+병원을 등록할 자리다. 데이터가 없으면 빈 목록이 나가고, 앱은 AI 검색 결과를 쓴다.
 """
 
 from datetime import date, timedelta
@@ -110,30 +120,5 @@ def seed_if_empty(db: Session) -> None:
         )
     )
 
-    # ---- 응급 병원 ----
-    db.add_all(
-        [
-            models.Hospital(
-                name="24시 온누리동물의료센터",
-                phone="02-1234-5678",
-                email="er@onnuri-amc.kr",
-                distance_km=1.2,
-                status="진료 중",
-                features="응급실 운영",
-                is_emergency=True,
-                open_24h=True,
-            ),
-            models.Hospital(
-                name="센트럴동물응급의료센터",
-                phone="02-8765-4321",
-                email="emergency@central-amc.kr",
-                distance_km=2.8,
-                status="진료 중",
-                features="야간 수술 가능",
-                is_emergency=True,
-                open_24h=True,
-            ),
-        ]
-    )
-
+    # ---- 병원은 시드하지 않는다 (위 docstring 참고) ----
     db.commit()
