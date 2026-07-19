@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "petcare-ai"
+version = "0.1.0"
+description = "PetCare AI — 수의학 RAG + LangGraph 상담 파이프라인"
+requires-python = ">=3.11"
+
+# 런타임 최소 의존성.
+# 임베딩 백엔드는 선택 의존성으로 분리한다 — AWS 프리티어(RAM 1GB)에는
+# torch/sentence-transformers 를 넣을 수 없어 openai 백엔드만 설치한다.
+dependencies = [
+    "pydantic>=2.7",
+    "langgraph>=0.2",
+    "langchain-core>=0.3",
+    "langchain-text-splitters>=0.3",
+    "faiss-cpu>=1.8",
+    "numpy>=1.26",
+    "reportlab>=4.2",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# AWS 프리티어·운영 기본 — 로컬 임베딩 모델 없이 API 로만 동작
+openai = ["langchain-openai>=0.2", "tavily-python>=0.5"]
+# Colab/GPU 환경 — 로컬 bge-m3 사용
+local = ["sentence-transformers>=3.0", "langchain-huggingface>=0.1"]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["petcare_ai*"]
+
+[tool.setuptools.package-data]
+petcare_ai = ["py.typed"]

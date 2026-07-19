@@ -1,0 +1,16 @@
+{
+  "species": "dog",
+  "count": 1440,
+  "created_at": "2026-07-19T22:40:15.919716+00:00",
+  "fingerprint": {
+    "format_version": 1,
+    "embedding_backend": "openai",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_normalize": true,
+    "embeddings_class": "OpenAIEmbeddings",
+    "chunk_size": 1000,
+    "chunk_overlap": 150,
+    "min_chunk_length": 200,
+    "dimension": 1024
+  }
+}
