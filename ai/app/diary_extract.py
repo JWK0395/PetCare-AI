@@ -5,7 +5,7 @@
 [입력]  DiaryExtractInput  : pet + 일기 원문 text + record_date + context
 [출력]  DiaryExtractOutput : items(정리 목록) + fields(daily_entries 저장용 7항목)
 
-`ai/일기장 정리.ipynb` 의 추출 로직을 서비스로 옮긴 것이다. 노트북과 다른 점:
+`members/jewon-kim/일기장 정리.ipynb` 의 추출 로직을 서비스로 옮긴 것이다. 노트북과 다른 점:
 
 - **record_date 를 추출하지 않는다.** 서버가 화면에서 고른 날짜를 함께 보내므로
   (`record_date` 인자) 원문에서 다시 뽑으면 두 값이 충돌한다.
