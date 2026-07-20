@@ -48,9 +48,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # petcare_ai import 경로
 # ---------------------------------------------------------------------------
-# 정식 경로는 `pip install -e ../jewon-ai` 다. 다만 개발 중에는 설치를 잊기 쉬워,
-# 설치돼 있지 않으면 저장소 안의 jewon-ai 를 sys.path 에 넣어 준다.
-# (배포 이미지에서는 항상 설치본을 쓰므로 이 폴백은 타지 않는다.)
+# petcare_ai 패키지는 이 폴더(ai/) 안에 함께 둔다(ai/petcare_ai). 서비스가 ai/ 에서
+# 실행되면 그대로 import 되지만, 다른 위치에서 기동될 때를 대비해 ai/ 를 sys.path 에
+# 넣어 준다. PETCARE_AI_PATH 환경 변수로 상위 폴더를 명시 지정할 수도 있다.
 def _ensure_petcare_ai_importable() -> None:
     try:
         import petcare_ai  # noqa: F401,PLC0415
@@ -61,9 +61,9 @@ def _ensure_petcare_ai_importable() -> None:
 
     candidates = [
         Path(os.environ["PETCARE_AI_PATH"]) if os.environ.get("PETCARE_AI_PATH") else None,
-        Path(__file__).resolve().parents[2] / "jewon-ai",
-        Path.cwd() / "jewon-ai",
-        Path.cwd().parent / "jewon-ai",
+        Path(__file__).resolve().parents[1],
+        Path.cwd(),
+        Path.cwd() / "ai",
     ]
     for candidate in candidates:
         if candidate and (candidate / "petcare_ai" / "__init__.py").exists():
@@ -74,8 +74,8 @@ def _ensure_petcare_ai_importable() -> None:
 
     raise RuntimeError(
         "petcare_ai 패키지를 찾을 수 없습니다.\n"
-        "  · 권장: ai/ 가상환경에서 `pip install -e ../jewon-ai` 실행\n"
-        "  · 또는 PETCARE_AI_PATH 환경 변수에 jewon-ai 경로 지정\n"
+        "  · petcare_ai 는 ai/ 폴더 안에 있어야 합니다(ai/petcare_ai).\n"
+        "  · 또는 PETCARE_AI_PATH 환경 변수에 petcare_ai 상위 폴더 경로를 지정하세요.\n"
         f"  · 탐색한 경로: {[str(c) for c in candidates if c]}"
     )
 

@@ -5,12 +5,12 @@
 #   python -m venv .venv
 #   .venv\Scripts\activate
 #   pip install -r requirements.txt
-#   pip install -e ../jewon-ai[openai]      # ← petcare_ai (RAG + LangGraph) 본체
 #
-# 마지막 줄이 핵심이다. ai/app 코드는 `petcare_ai` 를 import 한다. editable 설치를
-# 하지 않으면 app/petcare_bridge.py 가 저장소 안의 jewon-ai 를 sys.path 에 얹는
-# **개발용 폴백**으로 동작한다(배포 이미지에서는 반드시 설치본을 쓸 것).
-# 설치가 어려운 환경이라면 PETCARE_AI_PATH 환경 변수로 jewon-ai 경로를 지정한다.
+# petcare_ai (RAG + LangGraph 본체)는 이 폴더 안(ai/petcare_ai)에 함께 있으며,
+# 이 requirements 가 그 런타임 의존성까지 모두 포함한다. 서비스를 ai/ 에서 실행하면
+# app/petcare_bridge.py 가 ai/ 를 sys.path 에 얹어 `petcare_ai` 를 import 한다.
+# 다른 위치에서 실행할 때는 PETCARE_AI_PATH 로 상위 폴더를 지정하거나
+# `pip install -e .[openai]` 로 설치한다.
 #
 # `[openai]` extra 는 langchain-openai + tavily-python 을 끌어온다.
 # `[local]` extra(sentence-transformers · torch)는 **설치하지 않는다** — 아래 참고.

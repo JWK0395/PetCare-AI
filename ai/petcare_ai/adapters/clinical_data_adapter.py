@@ -465,7 +465,7 @@ def _sibling_module(root: str, name: str) -> str:
 def _import_existing_modules() -> tuple[Any, Any, str]:
     """기존 처리 코드(context, models)를 import 한다. 실패하면 RuntimeError.
 
-    여러 경로 후보를 시도하는 이유: 이 코드는 Colab / 서버 리포 루트 / jewon-ai
+    여러 경로 후보를 시도하는 이유: 이 코드는 Colab / 서버 리포 루트 / ai
     하위 등 서로 다른 작업 디렉터리에서 실행되며, 각각 패키지 경로가 다르다.
     성공한 패키지 root 를 함께 반환해 database 모듈도 같은 root 에서 찾는다.
     """
