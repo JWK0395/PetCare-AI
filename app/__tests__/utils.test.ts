@@ -1,4 +1,3 @@
-import { deriveSymptomSummary } from '../src/utils/symptoms';
 import { dotDate, shortDate, stampDateTime } from '../src/utils/date';
 
 describe('date utils', () => {
@@ -28,20 +27,3 @@ describe('date utils', () => {
   });
 });
 
-describe('deriveSymptomSummary', () => {
-  it('detects respiratory + cyanosis', () => {
-    expect(deriveSymptomSummary('숨을 가쁘게 몰아쉬고 혀 색이 파래요')).toBe(
-      '호흡곤란 · 청색증 의심',
-    );
-  });
-
-  it('detects poisoning', () => {
-    expect(deriveSymptomSummary('산책 중에 뭔가를 주워 먹은 것 같아요')).toBe(
-      '중독 의심',
-    );
-  });
-
-  it('falls back to generic label', () => {
-    expect(deriveSymptomSummary('상태가 이상해요')).toBe('응급 증상');
-  });
-});

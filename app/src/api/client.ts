@@ -12,6 +12,7 @@ import type {
   DiagnosisExtractResponse,
   DiagnosisFields,
   DiaryExtractResponse,
+  EmailHospitalTarget,
   EmergencyEmail,
   Hospital,
   Pet,
@@ -155,14 +156,28 @@ export const deleteDiagnosis = (diagnosisId: number) =>
   request<void>(`/api/diagnoses/${diagnosisId}`, { method: 'DELETE' });
 
 // ---------- AI check ----------
+/**
+ * AI 상태 체크.
+ *
+ * `regionName` 은 응급 시 주변 병원을 검색하는 데 쓴다. AI 쪽 병원 검색이
+ * 웹 검색 기반이라 좌표가 아니라 "서울특별시 강남구" 같은 **지역명 문자열**이
+ * 필요하다. 값이 없으면 AI 는 병원을 추측하지 않고 비워 보내며(존재하지 않는
+ * 병원을 응급 상황에 안내하는 것이 최악의 실패라서), 화면은 서버의 기존
+ * 병원 목록으로 대체한다.
+ */
 export const aiCheck = (
   petId: number,
   messages: ChatMessage[],
   sessionId: number | null = null,
+  regionName: string | null = null,
 ) =>
   request<AICheckResponse>(`/api/pets/${petId}/ai-check`, {
     method: 'POST',
-    body: JSON.stringify({ messages, session_id: sessionId }),
+    body: JSON.stringify({
+      messages,
+      session_id: sessionId,
+      region_name: regionName,
+    }),
   });
 
 export const getAISessions = (petId: number) =>
@@ -177,6 +192,13 @@ export const getHospitals = (emergencyOnly = true) =>
   request<Hospital[]>(`/api/hospitals?emergency=${emergencyOnly}`);
 
 // ---------- summaries ----------
+/**
+ * 병원 전달용 요약을 만든다.
+ *
+ * `extraNote` 에는 **이 요약을 만든 대화**를 그대로 넣는다. 서버는 이 값을 문서의
+ * 주호소·주요 변화 자리에 쓴다. 비워 보내면 AI 가 옛 진단서나 지난 일기로 그 자리를
+ * 채워, 오늘 무엇 때문에 왔는지가 문서에서 사라진다(실제로 그랬다).
+ */
 export const createSummary = (
   petId: number,
   riskLevel: RiskLevel | null,
@@ -192,15 +214,25 @@ export const getSummary = (summaryId: number) =>
   request<Summary>(`/api/summaries/${summaryId}`);
 
 // ---------- emergency email ----------
+/**
+ * 응급 이메일 초안을 만든다.
+ *
+ * 병원은 두 경로로 온다. AI 가 웹 검색으로 찾은 병원은 DB 에 없어 id 가 없으므로
+ * 이름·이메일·전화를 그대로 보낸다. 셋 다 비어 있어도 초안은 만들어진다 —
+ * 수신 주소는 보호자가 메일 앱에서 직접 넣는다.
+ */
 export const composeEmergencyEmail = (
   petId: number,
-  hospitalId: number | null,
+  target: EmailHospitalTarget,
   symptomSummary: string,
 ) =>
   request<EmergencyEmail>(`/api/pets/${petId}/emergency-emails`, {
     method: 'POST',
     body: JSON.stringify({
-      hospital_id: hospitalId,
+      hospital_id: target.hospitalId ?? null,
+      hospital_name: target.name ?? null,
+      hospital_email: target.email ?? null,
+      hospital_phone: target.phone ?? null,
       symptom_summary: symptomSummary,
     }),
   });

@@ -13,14 +13,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { aiCheck, getHospitals } from '../api/client';
-import type { AICheckResponse, ChatMessage, Hospital } from '../api/types';
+import type {
+  AICheckResponse,
+  ChatMessage,
+  Hospital,
+  HospitalSuggestion,
+} from '../api/types';
 import ChatHistoryModal from '../components/ChatHistoryModal';
+import CitationList from '../components/CitationList';
+import HospitalSuggestionList from '../components/HospitalSuggestionList';
 import { Badge } from '../components/ui';
 import type { RootStackParamList } from '../navigation/types';
 import { useChat, type RenderItem } from '../state/ChatContext';
 import { usePet } from '../state/PetContext';
 import { colors, radius, riskColors, shadow, spacing } from '../theme';
-import { deriveSymptomSummary } from '../utils/symptoms';
+import { getCurrentRegion } from '../native/location';
 
 // 채팅 아이템 키 — 모듈 스코프 카운터라 화면이 언마운트돼도 충돌 없이 이어진다.
 let keyCounter = 0;
@@ -73,38 +80,58 @@ export default function AICheckScreen() {
     const gen = chat.generation;
 
     try {
-      const response = await aiCheck(petId, newMessages, sessionId);
+      // 지역은 **대화당 1회만** 조회한다(ChatContext 캐시). 메시지마다 다시 읽으면
+      // 전송이 매번 느려지고 권한 팝업이 반복되는데, 한 대화 중 구·동이 바뀔 일은 없다.
+      // undefined = 아직 조회 전 / null = 조회했지만 알아내지 못함(재시도 안 함).
+      let region = chat.regionName;
+      if (region === undefined) {
+        region = (await getCurrentRegion(true).catch(() => null))?.regionName ?? null;
+        setChat(c => (c.generation !== gen ? c : { ...c, regionName: region }));
+      }
+
+      const response = await aiCheck(petId, newMessages, sessionId, region);
       const newItems: RenderItem[] = [];
 
-      if (response.risk_level === 'emergency') {
+      // 화면은 세 갈래뿐이다.
+      //   1) 되묻는 중        → 대화 말풍선만
+      //   2) 병원 권고(consult) → 요약(텍스트 내보내기)만
+      //   3) 응급              → 병원 목록 + 이메일만
+      //
+      // 판정 완료 여부는 `awaiting_more_info` 로만 판단한다. followup_question 유무로
+      // 가르면 안 된다 — 응급 판정이 **끝난** 응답도 병원에 전달할 항목을 함께
+      // 물어보기 때문에, 진짜 응급 카드까지 질문으로 처리되어 버린다.
+      // 앞선 판정을 되묻는 턴("왜 응급한거죠?")은 **카드를 다시 그리지 않는다.**
+      // 카드는 이미 위에 있고, 같은 것이 반복되면 대화가 되지 않는다.
+      const conversationalTurn =
+        response.awaiting_more_info || response.assessment_turn === false;
+
+      if (conversationalTurn) {
+        newItems.push({
+          type: 'assistant',
+          text: response.followup_question || response.reply,
+          key: nextKey(),
+        });
+      } else if (response.risk_level === 'emergency') {
         newItems.push({ type: 'emergency', response, key: nextKey() });
         getHospitals(true)
           .then(list =>
             setChat(c => (c.generation !== gen ? c : { ...c, hospitals: list })),
           )
           .catch(() => {});
+      } else if (response.risk_level === 'consult') {
+        newItems.push({ type: 'result', response, key: nextKey() });
       } else {
-        if (response.trend_summary && priorMessages.length === 0) {
-          newItems.push({
-            type: 'trend',
-            text: `최근 30일 기록 조회 — ${response.trend_summary}`,
-            key: nextKey(),
-          });
-        }
-        if (response.followup_question) {
-          newItems.push({
-            type: 'assistant',
-            text: response.reply,
-            key: nextKey(),
-          });
-          newItems.push({
-            type: 'assistant',
-            text: response.followup_question,
-            key: nextKey(),
-          });
-        } else {
-          newItems.push({ type: 'result', response, key: nextKey() });
-        }
+        // 정상 — 판정 카드를 붙이지 않는다. 걱정할 것이 없다는 답에 위험도 뱃지와
+        // 버튼을 다는 것은 화면만 무겁게 한다.
+        //
+        // **답변과 질문을 같이 그리지 않는다.** 되묻는 중이 아니면 이 답변은 완결된
+        // 것이고, 여기에 질문을 덧붙이면 "보양식 어떻게 만들까요?" 에 답을 다 해놓고
+        // "언제부터 그런 모습이 나타났나요?" 를 되묻는 화면이 된다(실제로 그랬다).
+        newItems.push({
+          type: 'assistant',
+          text: response.reply,
+          key: nextKey(),
+        });
       }
 
       const assistantContent = [response.reply, response.followup_question || '']
@@ -144,8 +171,20 @@ export default function AICheckScreen() {
     }
   };
 
-  const lastUserText =
-    [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  // 병원 전달 문서(요약·응급 이메일)에 실을 **대화 원문**.
+  //
+  // 예전에는 `deriveSymptomSummary()` 라는 정규식이 "호흡곤란 · 중독 의심" 같은
+  // 라벨만 뽑아 넘겼다. 그러다 보니 "산책 갔다왔는데 발이 빨개" 처럼 사전에 없는
+  // 증상은 통째로 사라지고, 문서의 주호소가 옛 진단명으로 채워졌다.
+  //
+  // 수의사가 볼 문서에는 보호자가 실제로 한 말이 들어가야 한다. 요약·판단은 AI 가
+  // 하고, 여기서는 원문을 그대로 옮긴다.
+  const conversationText = messages
+    .filter(m => m.role === 'user')
+    .map(m => m.content.trim())
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 1500);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -214,6 +253,7 @@ export default function AICheckScreen() {
                     onCreateSummary={() =>
                       navigation.navigate('Summary', {
                         riskLevel: item.response.risk_level,
+                        conversation: conversationText,
                       })
                     }
                   />
@@ -226,8 +266,16 @@ export default function AICheckScreen() {
                     hospitals={hospitals}
                     onSendEmail={hospitalId =>
                       navigation.navigate('EmergencyEmail', {
-                        symptomSummary: deriveSymptomSummary(lastUserText),
+                        symptomSummary: conversationText,
                         hospitalId,
+                      })
+                    }
+                    onSendEmailToSuggestion={suggestion =>
+                      navigation.navigate('EmergencyEmail', {
+                        symptomSummary: conversationText,
+                        hospitalName: suggestion.name,
+                        hospitalEmail: suggestion.email,
+                        hospitalPhone: suggestion.phone,
                       })
                     }
                   />
@@ -301,6 +349,7 @@ function ResultCard({
       {response.evidence ? (
         <Text style={styles.evidence}>근거 · {response.evidence}</Text>
       ) : null}
+      <CitationList citations={response.citations} />
       {response.can_generate_summary ? (
         <TouchableOpacity style={styles.summaryCta} onPress={onCreateSummary}>
           <Text style={styles.summaryCtaText}>병원 전달용 요약 만들기 →</Text>
@@ -315,11 +364,15 @@ function EmergencyCard({
   response,
   hospitals,
   onSendEmail,
+  onSendEmailToSuggestion,
 }: {
   response: AICheckResponse;
   hospitals: Hospital[];
   onSendEmail: (hospitalId: number) => void;
+  onSendEmailToSuggestion: (hospital: HospitalSuggestion) => void;
 }) {
+  const aiHospitalCount = response.hospitals?.length ?? 0;
+
   return (
     <View style={styles.emergencyWrap}>
       <View style={styles.emergencyBanner}>
@@ -329,7 +382,30 @@ function EmergencyCard({
       </View>
 
       <Text style={styles.emergencySectionTitle}>주변 24시 동물병원</Text>
-      {hospitals.map(hospital => (
+
+      {/* AI 가 실시간 검색으로 찾은 병원을 먼저 보여준다.
+          없으면 사용자가 직접 등록해 둔 병원(서버 DB)으로 대체한다.
+          둘 다 없을 수 있다 — 그때는 없는 병원을 지어내지 않고 안내만 한다. */}
+      <HospitalSuggestionList
+        hospitals={response.hospitals}
+        onSendEmail={onSendEmailToSuggestion}
+      />
+
+      {aiHospitalCount === 0 && hospitals.length === 0 ? (
+        <View style={styles.hospitalEmpty}>
+          <Text style={styles.hospitalEmptyTitle}>
+            주변 병원을 찾지 못했어요
+          </Text>
+          <Text style={styles.hospitalEmptyText}>
+            위치 권한이 꺼져 있거나 검색이 되지 않았어요. 응급 상황이라면 지도
+            앱에서 &apos;24시 동물병원&apos;을 검색하거나, 다니던 병원에 바로
+            전화해 주세요.
+          </Text>
+        </View>
+      ) : null}
+
+      {aiHospitalCount === 0 &&
+        hospitals.map(hospital => (
         <View key={hospital.id} style={styles.hospitalCard}>
           <View>
             <Text style={styles.hospitalName}>{hospital.name}</Text>
@@ -351,9 +427,9 @@ function EmergencyCard({
               onPress={() => Linking.openURL(`tel:${hospital.phone}`)}>
               <Text style={styles.callButtonText}>전화</Text>
             </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      ))}
+        ))}
 
       {response.transit_guidance.length > 0 ? (
         <View style={styles.guidanceBox}>
@@ -477,6 +553,23 @@ const styles = StyleSheet.create({
     padding: spacing(3.5),
     marginBottom: spacing(2),
     ...shadow,
+  },
+  hospitalEmpty: {
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: spacing(3.5),
+    marginBottom: spacing(2),
+  },
+  hospitalEmptyTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing(1),
+  },
+  hospitalEmptyText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   hospitalName: { fontSize: 14, fontWeight: '700', color: colors.text },
   hospitalMeta: {

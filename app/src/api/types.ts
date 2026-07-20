@@ -118,6 +118,45 @@ export interface RagCitation {
   snippet: string;
 }
 
+/**
+ * AI 가 실시간 검색으로 찾아 적합도를 매긴 병원.
+ *
+ * 아래 `Hospital`(서버 DB 의 시드 병원)과는 다른 타입이다. 이쪽은 DB 에 없는
+ * 검색 결과라 id·distance_km 이 없고, 대신 score/matched_reasons(왜 이 병원인지)와
+ * verification_required(전화로 확인할 것)를 갖는다.
+ * `availability` 가 기본 "전화 확인 필요" 인 이유: 검색 결과만으로 지금 문이 열려
+ * 있는지 확정할 수 없다.
+ *
+ * mock 모드에서는 비어 있으므로 화면은 항상 빈 목록을 견뎌야 한다.
+ */
+export interface HospitalSuggestion {
+  name: string;
+  phone: string | null;
+  address: string | null;
+  /**
+   * 병원 페이지에서 찾은 이메일 — 응급 이메일 초안의 수신 주소로 그대로 보낸다.
+   * 웹 검색으로 이메일이 나오는 경우는 드물어 대부분 null 이다(정상 상황).
+   * null 이면 초안은 만들어지되 수신 주소가 비므로 사용자가 직접 입력해야 한다.
+   */
+  email: string | null;
+  source_url: string;
+  score: number;
+  suitability: string; // recommended | possible | low_information
+  matched_reasons: string[];
+  verification_required: string[];
+  emergency_mentioned: boolean;
+  open_24h_mentioned: boolean;
+  availability: string;
+}
+
+/** 응급 이메일 초안의 수신 병원. DB 병원이면 hospitalId, AI 검색 병원이면 나머지. */
+export interface EmailHospitalTarget {
+  hospitalId?: number | null;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+
 export interface AICheckResponse {
   reply: string;
   risk_level: RiskLevel;
@@ -127,11 +166,17 @@ export interface AICheckResponse {
   reasons: string[];
   evidence: string;
   followup_question: string | null;
+  /** AI 가 아직 되묻는 중 — 판정이 끝나지 않았다는 뜻 */
+  awaiting_more_info?: boolean;
+  /** 이번 턴이 새 판정인가 — false 면 앞선 판정에 대한 설명이라 카드를 다시 그리지 않는다 */
+  assessment_turn?: boolean;
   can_generate_summary: boolean;
   show_hospitals: boolean;
   transit_guidance: string[];
   actions?: AgentAction[];
   citations?: RagCitation[];
+  /** AI 가 찾은 병원. 비어 있으면 화면은 기존 /api/hospitals 목록으로 대체한다. */
+  hospitals?: HospitalSuggestion[];
   source: string;
   session_id: number | null;
 }
@@ -150,6 +195,10 @@ export interface StoredChatMessage {
     can_generate_summary: boolean;
     show_hospitals: boolean;
     transit_guidance: string[];
+    // AI(Agent) 연결 시에만 채워진다. mock 모드에서는 빈 목록.
+    citations?: RagCitation[];
+    // 지난 대화를 다시 열었을 때 "어느 병원에 연락하라고 했는지"가 남아 있어야 한다.
+    hospitals?: HospitalSuggestion[];
   } | null;
 }
 
@@ -220,7 +269,11 @@ export interface EmergencyEmail {
   id: number;
   pet_id: number;
   hospital_id: number | null;
-  to_email: string;
+  /**
+   * 수신 주소. 병원 이메일을 못 구한 초안은 null 이다 — 404 로 막지 않고 초안을
+   * 먼저 만들기 때문이다. 이 경우 화면에서 사용자에게 주소를 입력받아야 한다.
+   */
+  to_email: string | null;
   subject: string;
   body: string;
   content: SummaryContent; // 요약과 동일한 4섹션 구조

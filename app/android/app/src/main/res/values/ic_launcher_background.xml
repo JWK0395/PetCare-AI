@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 런처 아이콘 배경. 발자국(파랑)이 또렷하게 보이도록 흰색으로 둔다. -->
+<resources>
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>
