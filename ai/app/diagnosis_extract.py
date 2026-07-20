@@ -5,7 +5,7 @@
 [입력]  DiagnosisExtractInput  : pet + file_name + file_text(PDF 추출 텍스트)
 [출력]  DiagnosisExtractOutput : fields(date/hospital/diagnosis/content) + items_read
 
-`ai/진단서 정리.ipynb` 의 추출 로직을 서비스로 옮긴 것이다. 노트북과 다른 점:
+`members/jewon-kim/진단서 정리.ipynb` 의 추출 로직을 서비스로 옮긴 것이다. 노트북과 다른 점:
 
 - **PDF 를 직접 읽지 않는다.** 메인 서버가 이미 pypdf 로 텍스트를 뽑아
   `file_text` 로 보내 준다(server/app/routers/diagnoses.py). 여기서 또 읽으면
