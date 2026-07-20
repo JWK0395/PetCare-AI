@@ -49,8 +49,8 @@ from petcare_ai.schemas import RetrievedEvidence, WebEvidence
 
 # 실데이터(283문서) 압축 해제본 — 전체가 아니라 소량 subset 만 index 로 만든다.
 REAL_DATA_PATH = Path(
-    "C:/Users/jewon/AppData/Local/Temp/claude/"
-    "E--jewon-JWK-project-PetCare-AI/e4b20802-3652-4b4b-a9cb-5d7c388b9380/"
+    "C:/Users/user/AppData/Local/Temp/claude/"
+    "E--user-JWK-project-PetCare-AI/e4b20802-3652-4b4b-a9cb-5d7c388b9380/"
     "scratchpad/raw/cornell_pet_health_documents.json"
 )
 

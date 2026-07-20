@@ -38,12 +38,12 @@ from petcare_ai.rag.normalizer import (
 # 실데이터 경로 (테스트용 압축 해제본 / 원본 zip)
 # ---------------------------------------------------------------------------
 _SCRATCH = Path(
-    "C:/Users/jewon/AppData/Local/Temp/claude"
-    "/E--jewon-JWK-project-PetCare-AI"
+    "C:/Users/user/AppData/Local/Temp/claude"
+    "/E--user-JWK-project-PetCare-AI"
     "/e4b20802-3652-4b4b-a9cb-5d7c388b9380/scratchpad"
 )
 DOCUMENTS_JSON = _SCRATCH / "raw" / "cornell_pet_health_documents.json"
-RAW_ZIP = Path("E:/jewon/Downloads/raw.zip")
+RAW_ZIP = Path("E:/user/Downloads/raw.zip")
 
 # 명세 2절 실측 사실 — 이 숫자가 바뀌면 데이터 수집 파이프라인이 바뀐 것이다.
 EXPECTED_TOTAL_RAW = 287
