@@ -14,8 +14,9 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          // 앱 내부 네이티브 모듈은 autolinking 대상이 아니라 여기서 직접 등록한다.
+          // LocationPackage: 응급 병원 검색용 위치·지역명 조회(LocationModule.kt)
+          add(LocationPackage())
         },
     )
   }

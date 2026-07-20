@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  적응형 런처 아이콘 (Android 8.0+).
+
+  런처가 background 와 foreground 를 겹쳐 놓고 기기 테마에 맞는 마스크(원·둥근사각·
+  물방울)로 잘라낸다. 그래서 발자국은 가운데 safe zone 안에만 그린다
+  (`drawable/ic_launcher_foreground.xml` 주석 참고).
+
+  monochrome 은 Android 13+ 테마 아이콘용이다. 같은 벡터를 재사용하면 시스템이
+  단색으로 칠해 주므로 별도 파일이 필요 없다.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

@@ -1,11 +1,12 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createSummary, getSummary } from '../api/client';
 import type { Summary } from '../api/types';
 import { useAlert } from '../components/AlertProvider';
 import SummaryDocumentView from '../components/SummaryDocumentView';
+import { shareSummaryText } from '../native/share';
 import { Badge, Button, Card, FullLoading } from '../components/ui';
 import type { RootStackParamList } from '../navigation/types';
 import { usePet } from '../state/PetContext';
@@ -17,7 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Summary'>;
 export default function SummaryScreen({ route }: Props) {
   const { pet } = usePet();
   const showAlert = useAlert();
-  const { riskLevel, summaryId } = route.params || {};
+  const { riskLevel, summaryId, conversation } = route.params || {};
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,12 +30,14 @@ export default function SummaryScreen({ route }: Props) {
       if (summaryId) {
         setSummary(await getSummary(summaryId));
       } else if (petId) {
-        setSummary(await createSummary(petId, riskLevel || 'observe'));
+        setSummary(
+          await createSummary(petId, riskLevel || 'observe', conversation || ''),
+        );
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '요약 생성 실패');
     }
-  }, [petId, riskLevel, summaryId]);
+  }, [petId, riskLevel, summaryId, conversation]);
 
   useEffect(() => {
     load();
@@ -93,11 +96,18 @@ export default function SummaryScreen({ route }: Props) {
     .filter(Boolean)
     .join('\n');
 
+  /**
+   * 요약을 밖으로 내보낸다(메모·드라이브·메신저 등에 저장).
+   *
+   * 버튼 이름이 'PDF 저장'이 아닌 이유: 서버는 실제 PDF 를 만들지만
+   * (`GET /api/summaries/{id}/pdf`) 그 엔드포인트가 Authorization 헤더를
+   * 요구해 외부 뷰어로 바로 열 수 없고, 앱이 받아 저장하려면 파일시스템
+   * 라이브러리가 필요하다. 하지 않는 일을 한다고 표시하지 않는다.
+   */
   const onShare = async () => {
-    try {
-      await Share.share({ message: shareText });
-    } catch {
-      showAlert('공유', '공유를 열 수 없어요.');
+    const ok = await shareSummaryText(shareText);
+    if (!ok) {
+      showAlert('내보내기', '공유를 열 수 없어요.');
     }
   };
 
@@ -117,7 +127,10 @@ export default function SummaryScreen({ route }: Props) {
 
       {/* 하단 고정 액션 */}
       <View style={styles.footer}>
-        <Button title="PDF 저장" onPress={onShare} />
+        {/* 병원 권고 경로는 **텍스트 내보내기 하나만** 둔다.
+            PDF 는 인증 헤더 문제로 앱에서 저장할 수 없어 표기하지 않고,
+            이메일은 응급 경로에서만 쓴다. */}
+        <Button title="요약 내보내기" onPress={onShare} />
       </View>
     </SafeAreaView>
   );
@@ -147,4 +160,5 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
   summaryCard: { marginBottom: spacing(4) },
+  secondaryAction: { marginTop: spacing(2) },
 });

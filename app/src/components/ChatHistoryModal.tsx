@@ -16,6 +16,7 @@ import { colors, radius, riskColors, shadow, spacing } from '../theme';
 import { stampDateTime } from '../utils/date';
 import { useAlert } from './AlertProvider';
 import AppModal from './AppModal';
+import CitationList from './CitationList';
 import { Badge, DeleteButton } from './ui';
 
 /** AI 체크 — 지난 대화를 보고 삭제하는 팝업 */
@@ -171,6 +172,7 @@ function Transcript({ detail }: { detail: AISessionDetail }) {
               {meta.evidence ? (
                 <Text style={styles.evidence}>근거 · {meta.evidence}</Text>
               ) : null}
+              <CitationList citations={meta.citations} />
             </View>
           );
         }

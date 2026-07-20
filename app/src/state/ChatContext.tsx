@@ -26,6 +26,14 @@ export interface ChatData {
   items: RenderItem[];
   hospitals: Hospital[];
   sessionId: number | null;
+  /**
+   * 이 대화에서 쓸 지역명(예: "서울특별시 강남구"). 응급 시 병원 검색어의 유일한 입력이다.
+   *
+   * **대화당 1회만 조회한다.** 메시지마다 위치를 다시 읽으면 매 전송이 수백 ms 씩
+   * 느려지고 권한 팝업이 반복될 수 있는데, 한 대화 도중 구·동이 바뀔 일은 없다.
+   * `undefined` = 아직 조회 전, `null` = 조회했지만 알아내지 못함(재시도하지 않는다).
+   */
+  regionName: string | null | undefined;
   /** 초기화 세대 — 진행 중 요청의 늦은 응답이 리셋된 대화를 되살리지 않게 한다 */
   generation: number;
 }
@@ -36,6 +44,7 @@ const EMPTY: ChatData = {
   items: [],
   hospitals: [],
   sessionId: null,
+  regionName: undefined,
   generation: 0,
 };
 
